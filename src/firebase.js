@@ -3,15 +3,26 @@ import { getAuth } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "AIzaSyDgTXN3uWZTGM27u2N9f1anpTwXsxfCaWk",
-  authDomain: "narraluna-6abac.firebaseapp.com",
-  projectId: "narraluna-6abac",
-  storageBucket: "narraluna-6abac.firebasestorage.app",
-  messagingSenderId: "253888489907",
-  appId: "1:253888489907:web:69dd3a7f4e75f7061dc3c6"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
 };
 
-const app = initializeApp(firebaseConfig);
+const requiredConfig = {
+  VITE_FIREBASE_API_KEY: firebaseConfig.apiKey,
+  VITE_FIREBASE_AUTH_DOMAIN: firebaseConfig.authDomain,
+  VITE_FIREBASE_PROJECT_ID: firebaseConfig.projectId,
+  VITE_FIREBASE_APP_ID: firebaseConfig.appId,
+};
 
-export const auth = getAuth(app);
-export const db = getFirestore(app);
+export const missingFirebaseConfig = Object.entries(requiredConfig)
+  .filter(([, value]) => !value)
+  .map(([key]) => key);
+export const isFirebaseConfigured = missingFirebaseConfig.length === 0;
+
+const app = isFirebaseConfigured ? initializeApp(firebaseConfig) : null;
+
+export const auth = app ? getAuth(app) : null;
+export const db = app ? getFirestore(app) : null;

@@ -1,0 +1,446 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function isSelf(uid) { return signedIn() && request.auth.uid == uid; }
+    function userPath(uid) { return /databases/$(database)/documents/usuarios/$(uid); }
+    function publicProfilePath(uid) { return /databases/$(database)/documents/perfilesPublicos/$(uid); }
+    function workPath(workId) { return /databases/$(database)/documents/obras/$(workId); }
+    function chapterPath(chapterId) { return /databases/$(database)/documents/capitulos/$(chapterId); }
+    function translationPath(translationId) { return /databases/$(database)/documents/traducciones/$(translationId); }
+    function commentPath(commentId) { return /databases/$(database)/documents/comentarios/$(commentId); }
+    function usernamePath(username) { return /databases/$(database)/documents/usernames/$(username); }
+    function isShortString(value, maximum) { return value is string && value.size() <= maximum; }
+    function timestampNow(value) { return value == request.time; }
+    function isValidUsername(username) {
+      return username is string
+        && username.matches('^[a-z0-9_]{3,20}$')
+        && !(username in ['admin', 'administrator', 'administrador', 'moderador', 'moderation', 'mod', 'support', 'soporte', 'umbral', 'umbraldehistorias', 'system', 'staff']);
+    }
+    function hasUsernameClaim(uid, username) {
+      return isValidUsername(username)
+        && existsAfter(usernamePath(username))
+        && getAfter(usernamePath(username)).data.uid == uid
+        && getAfter(usernamePath(username)).data.username == username;
+    }
+    function isAdmin() {
+      return signedIn()
+        && exists(userPath(request.auth.uid))
+        && get(userPath(request.auth.uid)).data.rol == 'admin';
+    }
+    function isTranslator() {
+      return signedIn()
+        && exists(userPath(request.auth.uid))
+        && (get(userPath(request.auth.uid)).data.rol == 'admin'
+          || ((!get(userPath(request.auth.uid)).data.keys().hasAny(['traduccionBloqueada'])
+              || get(userPath(request.auth.uid)).data.traduccionBloqueada != true)
+            && (get(userPath(request.auth.uid)).data.rol == 'traductor'
+              || get(userPath(request.auth.uid)).data.puedeTraducir == true
+              || get(userPath(request.auth.uid)).data.capitulosLeidos >= 200)));
+    }
+    function workData(workId) { return get(workPath(workId)).data; }
+    function isWorkOwner(workId) {
+      return signedIn()
+        && exists(workPath(workId))
+        && workData(workId).autorId == request.auth.uid;
+    }
+    function canContributeToWork(workId) {
+      return isAdmin()
+        || isWorkOwner(workId)
+        || (signedIn()
+          && exists(workPath(workId))
+          && workData(workId).keys().hasAny(['colaboradores'])
+          && workData(workId).colaboradores.hasAny([request.auth.uid]));
+    }
+    function translationDataAfter(translationId) {
+      return getAfter(translationPath(translationId)).data;
+    }
+    function isTranslationForWork(translationId, workId) {
+      return existsAfter(translationPath(translationId))
+        && translationDataAfter(translationId).obraId == workId;
+    }
+    function canContributeToTranslation(translationId) {
+      return isAdmin()
+        || (signedIn()
+          && existsAfter(translationPath(translationId))
+          && request.auth.uid in translationDataAfter(translationId).traductores);
+    }
+    function contentBelongsToWork(type, contentId, workId) {
+      return (type == 'obra'
+          && contentId == workId
+          && exists(workPath(contentId)))
+        || (type == 'capitulo'
+          && exists(chapterPath(contentId))
+          && get(chapterPath(contentId)).data.obraId == workId)
+        || (type == 'traduccion'
+          && exists(translationPath(contentId))
+          && get(translationPath(contentId)).data.obraId == workId);
+    }
+    function canReadFollow(userId) {
+      return (signedIn() && request.auth.uid == userId)
+        || isAdmin()
+        || (exists(publicProfilePath(userId))
+          && get(publicProfilePath(userId)).data.mostrarSeguidasPublicas == true);
+    }
+
+    match /usernames/{username} {
+      allow get: if true;
+      allow create: if signedIn()
+        && isValidUsername(username)
+        && request.resource.data.keys().hasOnly(['uid', 'username', 'createdAt'])
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.username == username
+        && timestampNow(request.resource.data.createdAt)
+        && existsAfter(userPath(request.auth.uid))
+        && existsAfter(publicProfilePath(request.auth.uid));
+      allow update, delete: if isAdmin();
+    }
+
+    match /usuarios/{uid} {
+      allow get: if isSelf(uid) || isAdmin();
+      allow list: if isAdmin();
+      allow create: if isSelf(uid)
+        && request.resource.data.keys().hasOnly(['uid', 'nombre', 'username', 'usernameNormalizado', 'email', 'bio', 'fotoUrl', 'rol', 'puedeTraducir', 'traduccionBloqueada', 'capitulosLeidos', 'mostrarSeguidasPublicas', 'createdAt', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && isShortString(request.resource.data.nombre, 60)
+        && request.resource.data.username == request.resource.data.usernameNormalizado
+        && hasUsernameClaim(uid, request.resource.data.usernameNormalizado)
+        && isShortString(request.resource.data.email, 254)
+        && isShortString(request.resource.data.bio, 600)
+        && isShortString(request.resource.data.fotoUrl, 2048)
+        && request.resource.data.rol == 'usuario'
+        && request.resource.data.puedeTraducir == false
+        && request.resource.data.traduccionBloqueada == false
+        && request.resource.data.capitulosLeidos == 0
+        && timestampNow(request.resource.data.createdAt)
+        && timestampNow(request.resource.data.updatedAt);
+      allow update: if isAdmin() || (isSelf(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre', 'username', 'usernameNormalizado', 'bio', 'fotoUrl', 'mostrarSeguidasPublicas', 'updatedAt'])
+        && ((resource.data.keys().hasAny(['usernameNormalizado'])
+            && request.resource.data.username == resource.data.username
+            && request.resource.data.usernameNormalizado == resource.data.usernameNormalizado)
+          || (!resource.data.keys().hasAny(['usernameNormalizado'])
+            && request.resource.data.username == request.resource.data.usernameNormalizado
+            && hasUsernameClaim(uid, request.resource.data.usernameNormalizado)))
+        && isShortString(request.resource.data.nombre, 60)
+        && isShortString(request.resource.data.bio, 600)
+        && isShortString(request.resource.data.fotoUrl, 2048)
+        && timestampNow(request.resource.data.updatedAt));
+      allow delete: if isAdmin();
+    }
+
+    match /perfilesPublicos/{uid} {
+      allow get, list: if true;
+      allow create: if isSelf(uid)
+        && request.resource.data.keys().hasOnly(['uid', 'nombre', 'username', 'usernameNormalizado', 'bio', 'fotoUrl', 'rol', 'mostrarSeguidasPublicas', 'seguidoresCount', 'siguiendoCount', 'fechaRegistro', 'updatedAt'])
+        && request.resource.data.uid == uid
+        && request.resource.data.username == request.resource.data.usernameNormalizado
+        && hasUsernameClaim(uid, request.resource.data.usernameNormalizado)
+        && request.resource.data.rol == 'usuario'
+        && request.resource.data.seguidoresCount == 0
+        && request.resource.data.siguiendoCount == 0
+        && isShortString(request.resource.data.nombre, 60)
+        && isShortString(request.resource.data.bio, 600)
+        && isShortString(request.resource.data.fotoUrl, 2048)
+        && timestampNow(request.resource.data.fechaRegistro)
+        && timestampNow(request.resource.data.updatedAt);
+      allow update: if isAdmin() || (isSelf(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nombre', 'username', 'usernameNormalizado', 'bio', 'fotoUrl', 'mostrarSeguidasPublicas', 'updatedAt'])
+        && request.resource.data.rol == resource.data.rol
+        && (!resource.data.keys().hasAny(['seguidoresCount'])
+          || request.resource.data.seguidoresCount == resource.data.seguidoresCount)
+        && (!resource.data.keys().hasAny(['siguiendoCount'])
+          || request.resource.data.siguiendoCount == resource.data.siguiendoCount)
+        && ((resource.data.keys().hasAny(['usernameNormalizado'])
+            && request.resource.data.username == resource.data.username
+            && request.resource.data.usernameNormalizado == resource.data.usernameNormalizado)
+          || (!resource.data.keys().hasAny(['usernameNormalizado'])
+            && request.resource.data.username == request.resource.data.usernameNormalizado
+            && hasUsernameClaim(uid, request.resource.data.usernameNormalizado)))
+        && isShortString(request.resource.data.nombre, 60)
+        && isShortString(request.resource.data.bio, 600)
+        && isShortString(request.resource.data.fotoUrl, 2048)
+        && timestampNow(request.resource.data.updatedAt));
+      allow delete: if isAdmin();
+    }
+
+    match /obras/{workId} {
+      allow get, list: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['titulo', 'tituloBusqueda', 'slug', 'descripcion', 'portadaUrl', 'autorId', 'autorNombre', 'autorBusqueda', 'autorUsername', 'autorUsernameNormalizado', 'generos', 'etiquetas', 'tipo', 'idiomaOriginal', 'autorOriginal', 'origenUrl', 'estado', 'colaboradores', 'vistas', 'likes', 'comentariosCount', 'seguidoresCount', 'capitulosCount', 'traduccionesCount', 'fechaCreacion', 'fechaActualizacion'])
+        && request.resource.data.autorId == request.auth.uid
+        && request.resource.data.autorUsername == request.resource.data.autorUsernameNormalizado
+        && request.resource.data.autorUsername == get(userPath(request.auth.uid)).data.username
+        && request.resource.data.autorNombre == get(userPath(request.auth.uid)).data.nombre
+        && request.resource.data.tipo in ['original', 'externa']
+        && (request.resource.data.tipo == 'original' || isAdmin())
+        && (request.resource.data.tipo == 'original' || request.resource.data.autorOriginal.size() > 0)
+        && request.resource.data.estado in ['en_progreso', 'completada', 'pausada']
+        && isShortString(request.resource.data.titulo, 120)
+        && request.resource.data.titulo.size() >= 3
+        && isShortString(request.resource.data.tituloBusqueda, 140)
+        && isShortString(request.resource.data.slug, 140)
+        && isShortString(request.resource.data.descripcion, 3000)
+        && request.resource.data.descripcion.size() >= 20
+        && isShortString(request.resource.data.portadaUrl, 2048)
+        && isShortString(request.resource.data.autorNombre, 60)
+        && isShortString(request.resource.data.autorBusqueda, 80)
+        && request.resource.data.generos is list
+        && request.resource.data.generos.size() > 0
+        && request.resource.data.generos.size() <= 4
+        && request.resource.data.etiquetas is list
+        && request.resource.data.etiquetas.size() <= 12
+        && request.resource.data.colaboradores is list
+        && request.resource.data.colaboradores.size() <= 20
+        && isShortString(request.resource.data.idiomaOriginal, 60)
+        && isShortString(request.resource.data.autorOriginal, 120)
+        && isShortString(request.resource.data.origenUrl, 2048)
+        && request.resource.data.vistas == 0
+        && request.resource.data.likes == 0
+        && request.resource.data.comentariosCount == 0
+        && request.resource.data.seguidoresCount == 0
+        && request.resource.data.capitulosCount == 0
+        && request.resource.data.traduccionesCount == 0
+        && timestampNow(request.resource.data.fechaCreacion)
+        && timestampNow(request.resource.data.fechaActualizacion);
+      allow update: if isAdmin() || (isWorkOwner(workId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['titulo', 'descripcion', 'portadaUrl', 'generos', 'etiquetas', 'idiomaOriginal', 'autorOriginal', 'origenUrl', 'estado', 'colaboradores', 'fechaActualizacion'])
+        && isShortString(request.resource.data.titulo, 120)
+        && request.resource.data.titulo.size() >= 3
+        && isShortString(request.resource.data.descripcion, 3000)
+        && request.resource.data.descripcion.size() >= 20
+        && isShortString(request.resource.data.portadaUrl, 2048)
+        && request.resource.data.generos is list
+        && request.resource.data.generos.size() > 0
+        && request.resource.data.generos.size() <= 4
+        && request.resource.data.etiquetas is list
+        && request.resource.data.etiquetas.size() <= 12
+        && request.resource.data.colaboradores is list
+        && request.resource.data.colaboradores.size() <= 20
+        && request.resource.data.estado in ['en_progreso', 'completada', 'pausada']
+        && timestampNow(request.resource.data.fechaActualizacion));
+      allow delete: if isAdmin() || isWorkOwner(workId);
+    }
+
+    match /traducciones/{translationId} {
+      allow get, list: if true;
+      allow create: if isTranslator()
+        && request.resource.data.keys().hasOnly(['obraId', 'idioma', 'traductorPrincipalId', 'traductorPrincipalNombre', 'traductorPrincipalUsername', 'traductores', 'estado', 'likes', 'comentariosCount', 'capitulosCount', 'fechaCreacion', 'fechaActualizacion'])
+        && exists(workPath(request.resource.data.obraId))
+        && workData(request.resource.data.obraId).tipo == 'externa'
+        && request.resource.data.traductorPrincipalId == request.auth.uid
+        && request.resource.data.traductorPrincipalUsername == get(userPath(request.auth.uid)).data.username
+        && request.resource.data.traductores is list
+        && request.resource.data.traductores.size() == 1
+        && request.resource.data.traductores.hasOnly([request.auth.uid])
+        && request.resource.data.estado == 'publicada'
+        && isShortString(request.resource.data.idioma, 60)
+        && isShortString(request.resource.data.traductorPrincipalNombre, 60)
+        && request.resource.data.likes == 0
+        && request.resource.data.comentariosCount == 0
+        && request.resource.data.capitulosCount == 0
+        && timestampNow(request.resource.data.fechaCreacion)
+        && timestampNow(request.resource.data.fechaActualizacion);
+      allow update, delete: if isAdmin();
+    }
+
+    match /capitulos/{chapterId} {
+      allow get, list: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['obraId', 'traduccionId', 'titulo', 'numero', 'bloques', 'contenidoTexto', 'autorId', 'autorNombre', 'autorUsername', 'fechaCreacion', 'fechaActualizacion', 'vistas', 'likes', 'comentariosCount'])
+        && request.resource.data.autorId == request.auth.uid
+        && request.resource.data.autorUsername == get(userPath(request.auth.uid)).data.username
+        && exists(workPath(request.resource.data.obraId))
+        && isShortString(request.resource.data.titulo, 180)
+        && request.resource.data.titulo.size() > 0
+        && request.resource.data.numero is int
+        && request.resource.data.numero > 0
+        && request.resource.data.bloques is list
+        && request.resource.data.bloques.size() > 0
+        && request.resource.data.bloques.size() <= 120
+        && isShortString(request.resource.data.contenidoTexto, 50000)
+        && isShortString(request.resource.data.autorNombre, 60)
+        && request.resource.data.vistas == 0
+        && request.resource.data.likes == 0
+        && request.resource.data.comentariosCount == 0
+        && timestampNow(request.resource.data.fechaCreacion)
+        && timestampNow(request.resource.data.fechaActualizacion)
+        && ((request.resource.data.traduccionId == null
+            && canContributeToWork(request.resource.data.obraId))
+          || (request.resource.data.traduccionId is string
+            && isTranslationForWork(request.resource.data.traduccionId, request.resource.data.obraId)
+            && canContributeToTranslation(request.resource.data.traduccionId)));
+      allow update: if isAdmin() || (signedIn()
+        && (resource.data.autorId == request.auth.uid
+          || isWorkOwner(resource.data.obraId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['titulo', 'bloques', 'contenidoTexto', 'fechaActualizacion'])
+        && isShortString(request.resource.data.titulo, 180)
+        && request.resource.data.titulo.size() > 0
+        && request.resource.data.bloques is list
+        && request.resource.data.bloques.size() > 0
+        && request.resource.data.bloques.size() <= 120
+        && isShortString(request.resource.data.contenidoTexto, 50000)
+        && timestampNow(request.resource.data.fechaActualizacion));
+      allow delete: if isAdmin() || (signedIn()
+        && (resource.data.autorId == request.auth.uid
+          || isWorkOwner(resource.data.obraId)));
+    }
+
+    match /likes/{likeId} {
+      allow get: if signedIn()
+        && (!exists(/databases/$(database)/documents/likes/$(likeId))
+          || resource.data.usuarioId == request.auth.uid
+          || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['tipoContenido', 'contenidoId', 'obraId', 'usuarioId', 'fecha'])
+        && request.resource.data.usuarioId == request.auth.uid
+        && request.resource.data.tipoContenido in ['obra', 'capitulo', 'traduccion']
+        && likeId == request.resource.data.tipoContenido + '_' + request.resource.data.contenidoId + '_' + request.auth.uid
+        && isShortString(request.resource.data.contenidoId, 180)
+        && isShortString(request.resource.data.obraId, 180)
+        && contentBelongsToWork(request.resource.data.tipoContenido, request.resource.data.contenidoId, request.resource.data.obraId)
+        && timestampNow(request.resource.data.fecha);
+      allow delete: if signedIn()
+        && (resource.data.usuarioId == request.auth.uid || isAdmin());
+    }
+
+    match /comentarios/{commentId} {
+      allow get, list: if true;
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['tipoContenido', 'contenidoId', 'obraId', 'padreId', 'autorId', 'autorNombre', 'autorUsername', 'autorFoto', 'contenido', 'fecha', 'updatedAt'])
+        && request.resource.data.autorId == request.auth.uid
+        && request.resource.data.autorUsername == get(userPath(request.auth.uid)).data.username
+        && request.resource.data.tipoContenido in ['obra', 'capitulo', 'traduccion']
+        && isShortString(request.resource.data.contenidoId, 180)
+        && isShortString(request.resource.data.obraId, 180)
+        && isShortString(request.resource.data.padreId, 180)
+        && isShortString(request.resource.data.autorNombre, 60)
+        && isShortString(request.resource.data.autorFoto, 2048)
+        && isShortString(request.resource.data.contenido, 2000)
+        && request.resource.data.contenido.size() > 0
+        && contentBelongsToWork(request.resource.data.tipoContenido, request.resource.data.contenidoId, request.resource.data.obraId)
+        && timestampNow(request.resource.data.fecha)
+        && timestampNow(request.resource.data.updatedAt);
+      allow update: if isAdmin() || (signedIn()
+        && resource.data.autorId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['contenido', 'updatedAt'])
+        && isShortString(request.resource.data.contenido, 2000)
+        && request.resource.data.contenido.size() > 0
+        && timestampNow(request.resource.data.updatedAt));
+      allow delete: if isAdmin() || (signedIn()
+        && resource.data.autorId == request.auth.uid);
+    }
+
+    match /seguimientos/{followId} {
+      allow get: if signedIn()
+        && (!exists(/databases/$(database)/documents/seguimientos/$(followId))
+          || canReadFollow(resource.data.usuarioId));
+      allow list: if canReadFollow(resource.data.usuarioId);
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['usuarioId', 'obraId', 'fechaSeguimiento', 'ultimoCapituloVisto', 'ultimoCapituloDisponible', 'ultimoDisponibleNumero'])
+        && request.resource.data.usuarioId == request.auth.uid
+        && followId == request.auth.uid + '_' + request.resource.data.obraId
+        && exists(workPath(request.resource.data.obraId))
+        && isShortString(request.resource.data.ultimoCapituloVisto, 180)
+        && isShortString(request.resource.data.ultimoCapituloDisponible, 180)
+        && request.resource.data.ultimoDisponibleNumero is int
+        && timestampNow(request.resource.data.fechaSeguimiento);
+      allow update: if isAdmin() || (signedIn()
+        && resource.data.usuarioId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['ultimoCapituloVisto', 'ultimoCapituloDisponible', 'ultimoDisponibleNumero'])
+        && isShortString(request.resource.data.ultimoCapituloVisto, 180)
+        && isShortString(request.resource.data.ultimoCapituloDisponible, 180)
+        && request.resource.data.ultimoDisponibleNumero is int);
+      allow delete: if signedIn()
+        && (resource.data.usuarioId == request.auth.uid || isAdmin());
+    }
+
+    match /seguimientosAutores/{followId} {
+      allow get: if signedIn()
+        && (!exists(/databases/$(database)/documents/seguimientosAutores/$(followId))
+          || resource.data.usuarioId == request.auth.uid
+          || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['usuarioId', 'autorId', 'fechaSeguimiento'])
+        && request.resource.data.usuarioId == request.auth.uid
+        && request.resource.data.autorId != request.auth.uid
+        && followId == request.auth.uid + '_' + request.resource.data.autorId
+        && exists(publicProfilePath(request.resource.data.autorId))
+        && timestampNow(request.resource.data.fechaSeguimiento);
+      allow delete: if signedIn()
+        && (resource.data.usuarioId == request.auth.uid || isAdmin());
+    }
+
+    match /progresoLectura/{progressId} {
+      allow get, list: if signedIn()
+        && (resource.data.usuarioId == request.auth.uid || isAdmin());
+      allow create, update: if signedIn()
+        && request.resource.data.keys().hasOnly(['usuarioId', 'obraId', 'capituloId', 'numeroCapitulo', 'tituloCapitulo', 'traduccionId', 'fechaLectura', 'ultimoDisponible', 'ultimoDisponibleNumero', 'ultimoDisponibleTitulo'])
+        && request.resource.data.usuarioId == request.auth.uid
+        && progressId == request.auth.uid + '_' + request.resource.data.obraId
+        && exists(workPath(request.resource.data.obraId))
+        && isShortString(request.resource.data.capituloId, 180)
+        && exists(chapterPath(request.resource.data.capituloId))
+        && get(chapterPath(request.resource.data.capituloId)).data.obraId == request.resource.data.obraId
+        && request.resource.data.numeroCapitulo is int
+        && isShortString(request.resource.data.tituloCapitulo, 180)
+        && isShortString(request.resource.data.traduccionId, 180)
+        && isShortString(request.resource.data.ultimoDisponible, 180)
+        && request.resource.data.ultimoDisponibleNumero is int
+        && isShortString(request.resource.data.ultimoDisponibleTitulo, 180)
+        && timestampNow(request.resource.data.fechaLectura);
+      allow delete: if signedIn()
+        && (resource.data.usuarioId == request.auth.uid || isAdmin());
+    }
+
+    match /lecturasCapitulos/{readingId} {
+      allow get: if signedIn()
+        && (!exists(/databases/$(database)/documents/lecturasCapitulos/$(readingId))
+          || resource.data.usuarioId == request.auth.uid
+          || isAdmin());
+      allow list: if signedIn()
+        && (resource.data.usuarioId == request.auth.uid || isAdmin());
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['usuarioId', 'obraId', 'capituloId', 'traduccionId', 'fechaPrimeraLectura'])
+        && request.resource.data.usuarioId == request.auth.uid
+        && readingId == request.auth.uid + '_' + request.resource.data.capituloId
+        && exists(workPath(request.resource.data.obraId))
+        && exists(chapterPath(request.resource.data.capituloId))
+        && get(chapterPath(request.resource.data.capituloId)).data.obraId == request.resource.data.obraId
+        && isShortString(request.resource.data.traduccionId, 180)
+        && timestampNow(request.resource.data.fechaPrimeraLectura);
+    }
+
+    match /notificaciones/{notificationId} {
+      allow get, list: if signedIn()
+        && (resource.data.usuarioId == request.auth.uid || isAdmin());
+      allow update: if isAdmin() || (signedIn()
+        && resource.data.usuarioId == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leida', 'leidaEn'])
+        && request.resource.data.leida is bool);
+    }
+
+    match /reportes/{reportId} {
+      allow get: if signedIn()
+        && (resource.data.usuarioId == request.auth.uid || isAdmin());
+      allow list: if isAdmin();
+      allow create: if signedIn()
+        && request.resource.data.keys().hasOnly(['usuarioId', 'tipoContenido', 'contenidoId', 'obraId', 'motivo', 'estado', 'fecha'])
+        && request.resource.data.usuarioId == request.auth.uid
+        && request.resource.data.tipoContenido in ['obra', 'capitulo', 'traduccion', 'comentario']
+        && reportId == request.auth.uid + '_' + request.resource.data.tipoContenido + '_' + request.resource.data.contenidoId
+        && isShortString(request.resource.data.contenidoId, 180)
+        && isShortString(request.resource.data.obraId, 180)
+        && isShortString(request.resource.data.motivo, 500)
+        && request.resource.data.motivo.size() > 0
+        && request.resource.data.estado == 'pendiente'
+        && ((request.resource.data.tipoContenido != 'comentario'
+            && contentBelongsToWork(request.resource.data.tipoContenido, request.resource.data.contenidoId, request.resource.data.obraId))
+          || (request.resource.data.tipoContenido == 'comentario'
+            && exists(commentPath(request.resource.data.contenidoId))
+            && get(commentPath(request.resource.data.contenidoId)).data.obraId == request.resource.data.obraId))
+        && timestampNow(request.resource.data.fecha);
+      allow update, delete: if isAdmin();
+    }
+  }
+}

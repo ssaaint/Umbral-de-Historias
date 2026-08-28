@@ -1,264 +1,346 @@
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "react-router-dom";
 import {
   collection,
-  collectionGroup,
-  getDocs
+  doc,
+  getDoc,
+  getDocs,
+  limit,
+  orderBy,
+  query,
+  where,
 } from "firebase/firestore";
+import { db } from "../firebase";
 import SearchBar from "../components/SearchBar";
 import StoryCard from "../components/StoryCard";
-import { db } from "../firebase";
-import {
-  ALL_FILTER,
-  STORY_TYPE_EXTERNAL_WORK,
-  STORY_TYPE_ORIGINAL,
-  STORY_TYPE_TRANSLATION,
-  getStoryGenres,
-  getStoryRawType,
-  getViewsCount,
-  sortByDate,
-  sortByLikes,
-  storyMatchesSearch,
-  uniqueList
-} from "../utils/storyUtils";
-import { buildLibraryItems } from "../utils/libraryUtils";
+import { normalizeForSearch } from "../utils/contentModel";
 
 const initialFilters = {
-  genero: ALL_FILTER,
-  tipo: ALL_FILTER
+  genero: "",
+  idioma: "",
+  tipo: "",
+  estado: "",
+  orden: "actualizadas",
+  minCapitulos: "",
 };
 
-const exploreModes = [
-  { value: "recientes", label: "Recientes" },
-  { value: "populares", label: "Populares" },
-  { value: "mas-vistas", label: "Mas vistas" },
-  { value: "mas-likeadas", label: "Mas likeadas" }
-];
+const dateValue = (value) => value?.toMillis?.() || value?.seconds * 1000 || 0;
+const score = (work) =>
+  Number(work.vistas || 0) +
+  Number(work.likes || 0) * 2 +
+  Number(work.seguidoresCount || 0) * 3;
 
-const typeOptions = [
-  { value: ALL_FILTER, label: "Todos" },
-  { value: STORY_TYPE_ORIGINAL, label: "Originales" },
-  { value: STORY_TYPE_EXTERNAL_WORK, label: "Obras externas" },
-  { value: STORY_TYPE_TRANSLATION, label: "Traducciones" }
-];
+const sorter = (items, mode) =>
+  [...items].sort((a, b) => {
+    if (mode === "populares") return score(b) - score(a);
+    if (mode === "vistas") return Number(b.vistas || 0) - Number(a.vistas || 0);
+    if (mode === "likes") return Number(b.likes || 0) - Number(a.likes || 0);
+    if (mode === "seguidas") {
+      return Number(b.seguidoresCount || 0) - Number(a.seguidoresCount || 0);
+    }
+    if (mode === "capitulos") {
+      return (
+        Number(b.capitulosDisponibles ?? b.capitulosCount ?? 0) -
+        Number(a.capitulosDisponibles ?? a.capitulosCount ?? 0)
+      );
+    }
+    if (mode === "nuevas")
+      return dateValue(b.fechaCreacion) - dateValue(a.fechaCreacion);
+    return dateValue(b.fechaActualizacion) - dateValue(a.fechaActualizacion);
+  });
 
-const sortStories = (stories, mode) => {
-  if (mode === "recientes") return sortByDate(stories);
-  if (mode === "mas-vistas") {
-    return [...stories].sort((a, b) => getViewsCount(b) - getViewsCount(a));
-  }
-
-  return sortByLikes(stories);
-};
-
-export default function Explorar() {
-  const [searchParams] = useSearchParams();
-  const [items, setItems] = useState([]);
-  const [busqueda, setBusqueda] = useState("");
-  const [filtros, setFiltros] = useState(() => ({
-    ...initialFilters,
-    genero: searchParams.get("genero") || ALL_FILTER
-  }));
-  const [modo, setModo] = useState("recientes");
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const cargarBiblioteca = async () => {
-      try {
-        const [historiasResult, obrasResult] = await Promise.allSettled([
-          getDocs(collection(db, "historias")),
-          getDocs(collection(db, "obras"))
-        ]);
-        const historiasDocs =
-          historiasResult.status === "fulfilled" ? historiasResult.value.docs : [];
-        const obrasDocs =
-          obrasResult.status === "fulfilled" ? obrasResult.value.docs : [];
-
-        if (historiasResult.status === "rejected") {
-          console.error("No se pudieron cargar historias antiguas:", historiasResult.reason);
-        }
-
-        if (obrasResult.status === "rejected") {
-          console.error("No se pudieron cargar obras:", obrasResult.reason);
-        }
-
-        const libraryItems = buildLibraryItems(obrasDocs, historiasDocs);
-
-        let traducciones = [];
-
-        try {
-          const traduccionesSnap = await getDocs(collectionGroup(db, "traducciones"));
-
-          traducciones = traduccionesSnap.docs.map((traduccionDoc) => {
-            const obraId = traduccionDoc.ref.parent.parent?.id || "";
-            const obra = libraryItems.find((item) => item.id === obraId) || {};
-            const data = traduccionDoc.data();
-
-            return {
-              id: traduccionDoc.id,
-              obraId,
-              source: "traducciones",
-              route: obraId ? `/obra/${obraId}` : "/traducir",
-              tipo: STORY_TYPE_TRANSLATION,
-              titulo: data.titulo || `${obra.titulo || "Obra"} - traduccion`,
-              autor:
-                data.traductorPrincipalNombre ||
-                data.traductorEmail ||
-                "Traductor registrado",
-              descripcion: obra.titulo
-                ? `Traduccion de ${obra.titulo}`
-                : "Traduccion pendiente",
-              historiaOriginalTitulo: obra.titulo || "",
-              generos: obra.generos || [],
-              etiquetas: obra.etiquetas || [],
-              portada: obra.portada || "",
-              portadaUrl: obra.portadaUrl || obra.portada || "",
-              idiomaDestino: data.idiomaDestino || "",
-              estado: data.estado || "pendiente",
-              fecha: data.updatedAt || data.fecha || null,
-              updatedAt: data.updatedAt || data.fecha || null
-            };
-          });
-        } catch {
-          traducciones = [];
-        }
-
-        setItems([...libraryItems, ...traducciones]);
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    cargarBiblioteca();
-  }, []);
-
-  const generos = useMemo(
-    () => uniqueList(items.flatMap(getStoryGenres)),
-    [items]
+const chunks = (items, size) =>
+  Array.from({ length: Math.ceil(items.length / size) }, (_, index) =>
+    items.slice(index * size, index * size + size),
   );
 
-  const resultados = useMemo(() => {
-    const filtradas = items.filter((historia) => {
-      const matchesSearch = storyMatchesSearch(historia, busqueda);
-      const matchesGenre =
-        filtros.genero === ALL_FILTER ||
-        getStoryGenres(historia).includes(filtros.genero);
-      const matchesType =
-        filtros.tipo === ALL_FILTER ||
-        getStoryRawType(historia) === filtros.tipo;
+async function loadRealChapterCounts(works) {
+  const counts = new Map(works.map((work) => [work.id, 0]));
+  await Promise.all(
+    chunks(
+      works.map((work) => work.id),
+      30,
+    ).map(async (workIds) => {
+      if (!workIds.length) return;
+      const snapshot = await getDocs(
+        query(collection(db, "capitulos"), where("obraId", "in", workIds)),
+      );
+      snapshot.docs.forEach((chapter) => {
+        const data = chapter.data();
+        if (!data.traduccionId) {
+          counts.set(data.obraId, Number(counts.get(data.obraId) || 0) + 1);
+        }
+      });
+    }),
+  );
+  return counts;
+}
 
-      return matchesSearch && matchesGenre && matchesType;
+async function enrichWorksWithPublicAuthors(works) {
+  const authorIds = [
+    ...new Set(works.map((work) => work.autorId).filter(Boolean)),
+  ];
+  const publicProfiles = await Promise.all(
+    authorIds.map(async (authorId) => {
+      const snapshot = await getDoc(doc(db, "perfilesPublicos", authorId));
+      return snapshot.exists()
+        ? [authorId, snapshot.data()]
+        : [authorId, null];
+    }),
+  );
+  const authors = new Map(publicProfiles);
+  return works.map((work) => {
+    const author = authors.get(work.autorId);
+    if (!author) return work;
+    return {
+      ...work,
+      autorNombre: work.autorNombre || author.nombre || "",
+      autorUsername: work.autorUsername || author.username || "",
+      autorUsernameNormalizado:
+        work.autorUsernameNormalizado || author.usernameNormalizado || "",
+    };
+  });
+}
+
+export default function Explorar() {
+  const [works, setWorks] = useState([]);
+  const [search, setSearch] = useState("");
+  const [filters, setFilters] = useState(initialFilters);
+  const [loading, setLoading] = useState(true);
+  const [chapterCountsReady, setChapterCountsReady] = useState(false);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setLoadError("");
+        const snapshot = await getDocs(
+          query(
+            collection(db, "obras"),
+            orderBy("fechaActualizacion", "desc"),
+            limit(100),
+          ),
+        );
+        const loadedWorks = snapshot.docs.map((item) => ({
+          id: item.id,
+          ...item.data(),
+        }));
+        if (!active) return;
+        setWorks(loadedWorks);
+        setChapterCountsReady(false);
+
+        try {
+          const [worksWithAuthors, counts] = await Promise.all([
+            enrichWorksWithPublicAuthors(loadedWorks).catch((error) => {
+              console.error("No se pudieron cargar los autores pÃºblicos:", error);
+              return loadedWorks;
+            }),
+            loadRealChapterCounts(loadedWorks),
+          ]);
+          if (active) {
+            setWorks(
+              worksWithAuthors.map((work) => ({
+                ...work,
+                capitulosDisponibles: Number(counts.get(work.id) || 0),
+              })),
+            );
+            setChapterCountsReady(true);
+          }
+        } catch (error) {
+          console.error("No se pudo comprobar el conteo de capítulos:", error);
+          if (active) setChapterCountsReady(true);
+        }
+      } catch (error) {
+        console.error("No se pudo explorar obras:", error);
+        if (active) {
+          setLoadError("No pudimos cargar las obras. Intentá nuevamente.");
+          setWorks([]);
+        }
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const genres = useMemo(() => {
+    const unique = new Map();
+    works.forEach((work) => {
+      (work.generos || []).forEach((genre) => {
+        const label = String(genre || "").trim();
+        const normalized = normalizeForSearch(label);
+        if (label && !unique.has(normalized)) unique.set(normalized, label);
+      });
     });
+    return [...unique.values()].sort((a, b) => a.localeCompare(b, "es"));
+  }, [works]);
 
-    return sortStories(filtradas, modo);
-  }, [busqueda, filtros, items, modo]);
+  const results = useMemo(() => {
+    const term = normalizeForSearch(search);
+    const minimum = Number(filters.minCapitulos || 0);
+    return sorter(
+      works.filter((work) => {
+        const searchable = [
+          work.tituloBusqueda,
+          work.autorBusqueda,
+          work.autorUsername,
+          work.autorUsernameNormalizado,
+          work.titulo,
+          work.autorNombre,
+          work.autorOriginal,
+          ...(work.generos || []),
+          ...(work.etiquetas || []),
+        ]
+          .map(normalizeForSearch)
+          .join(" ");
+        const genresMatch = (work.generos || []).some(
+          (genre) =>
+            normalizeForSearch(genre) === normalizeForSearch(filters.genero),
+        );
+        const chapterCount = Number(
+          work.capitulosDisponibles ?? work.capitulosCount ?? 0,
+        );
+        return (
+          (!term || searchable.includes(term)) &&
+          (!filters.genero || genresMatch) &&
+          (!filters.idioma ||
+            normalizeForSearch(work.idiomaOriginal).includes(
+              normalizeForSearch(filters.idioma),
+            )) &&
+          (!filters.tipo || work.tipo === filters.tipo) &&
+          (!filters.estado || work.estado === filters.estado) &&
+          (!filters.minCapitulos || chapterCount >= minimum)
+        );
+      }),
+      filters.orden,
+    );
+  }, [filters, search, works]);
 
-  const updateFilter = (name, value) => {
-    setFiltros((current) => ({
-      ...current,
-      [name]: value
-    }));
-  };
+  const set = (key, value) =>
+    setFilters((current) => ({ ...current, [key]: value }));
 
   return (
     <main className="page page-explore">
       <section className="explore-header">
         <div>
           <p className="section-kicker">Explorar</p>
-          <h1>Encontra tu proxima lectura</h1>
-          <p>
-            Busca por titulo, autor, genero, etiquetas o descripcion y filtra la
-            biblioteca sin volver al inicio.
-          </p>
+          <h1>Encontrá tu próxima lectura</h1>
+          <p>Buscá por título, autor, @username, género, etiqueta o idioma.</p>
         </div>
       </section>
-
       <section className="explore-controls">
-        <SearchBar value={busqueda} onChange={setBusqueda} />
-
+        <SearchBar value={search} onChange={setSearch} />
         <div className="filters-panel explore-filters">
+          <Select
+            label="Género"
+            value={filters.genero}
+            onChange={(value) => set("genero", value)}
+            options={genres.map((item) => [item, item])}
+          />
+          <input
+            className="form-field"
+            value={filters.idioma}
+            placeholder="Idioma"
+            onChange={(event) => set("idioma", event.target.value)}
+          />
+          <Select
+            label="Tipo"
+            value={filters.tipo}
+            onChange={(value) => set("tipo", value)}
+            options={[
+              ["original", "Original"],
+              ["externa", "Obra externa"],
+            ]}
+          />
+          <Select
+            label="Estado"
+            value={filters.estado}
+            onChange={(value) => set("estado", value)}
+            options={[
+              ["en_progreso", "En progreso"],
+              ["completada", "Completada"],
+              ["pausada", "Pausada"],
+            ]}
+          />
           <label className="filter-field">
-            <span>Genero</span>
-            <select
-              value={filtros.genero}
-              onChange={(event) => updateFilter("genero", event.target.value)}
-            >
-              <option value={ALL_FILTER}>Todos</option>
-              {generos.map((genero) => (
-                <option key={genero} value={genero}>
-                  {genero}
-                </option>
-              ))}
-            </select>
+            <span>Mínimo de capítulos</span>
+            <input
+              type="number"
+              min="0"
+              value={filters.minCapitulos}
+              onChange={(event) => set("minCapitulos", event.target.value)}
+            />
           </label>
-
-          <label className="filter-field">
-            <span>Tipo</span>
-            <select
-              value={filtros.tipo}
-              onChange={(event) => updateFilter("tipo", event.target.value)}
-            >
-              {typeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="filter-field">
-            <span>Orden</span>
-            <select
-              value={modo}
-              onChange={(event) => setModo(event.target.value)}
-            >
-              {exploreModes.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
+          <Select
+            label="Ordenar por"
+            value={filters.orden}
+            onChange={(value) => set("orden", value)}
+            options={[
+              ["populares", "Más populares"],
+              ["nuevas", "Más recientes"],
+              ["vistas", "Más vistas"],
+              ["likes", "Más likes"],
+              ["seguidas", "Más seguidas"],
+              ["capitulos", "Más capítulos"],
+              ["actualizadas", "Recientemente actualizadas"],
+            ]}
+          />
           <button
             type="button"
             className="btn-filter-reset"
             onClick={() => {
-              setBusqueda("");
-              setFiltros(initialFilters);
-              setModo("recientes");
+              setSearch("");
+              setFilters(initialFilters);
             }}
           >
-            Limpiar
+            Limpiar filtros
           </button>
         </div>
       </section>
-
       <section className="home-section">
         <div className="section-heading">
           <p className="section-kicker">
-            {loading ? "Cargando" : `${resultados.length} resultados`}
+            {loading
+              ? "Cargando"
+              : !chapterCountsReady
+                ? "Comprobando capítulos disponibles"
+                : `${results.length} resultados`}
           </p>
-          <h2>Resultados</h2>
+          <h2>Obras</h2>
         </div>
-
-        {resultados.length > 0 ? (
+        {loadError ? (
+          <p className="form-error">{loadError}</p>
+        ) : results.length ? (
           <div className="grid explore-grid">
-            {resultados.map((historia) => (
-              <StoryCard
-                key={`${historia.source || "item"}-${historia.obraId || "obra"}-${historia.id}`}
-                historia={historia}
-              />
+            {results.map((work) => (
+              <StoryCard key={work.id} historia={work} />
             ))}
           </div>
         ) : (
           <p className="empty-state">
-            No hay obras o historias para esa busqueda o esos filtros.
+            No encontramos obras con esa búsqueda y esos filtros.
           </p>
         )}
       </section>
     </main>
+  );
+}
+
+function Select({ label, value, onChange, options }) {
+  return (
+    <label className="filter-field">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Todos</option>
+        {options.map(([option, text]) => (
+          <option value={option} key={option}>
+            {text}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

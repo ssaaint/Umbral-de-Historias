@@ -1,612 +1,191 @@
-import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "../firebase";
+import { useAuth } from "../hooks/useAuth";
+import ChapterBlocks from "../components/ChapterBlocks";
+import CommentsSection from "../components/CommentsSection";
+import LikeButton from "../components/LikeButton";
+import ReadingSettings from "../components/ReadingSettings";
 import {
-  collection,
-  deleteDoc,
-  doc,
-  getDoc,
-  getDocs,
-  increment,
-  runTransaction,
-  setDoc,
-  updateDoc
-} from "firebase/firestore";
-import { auth, db } from "../firebase";
-import { getDisplayChapters } from "../utils/chapterUtils";
-import { buildObraFromHistoria } from "../utils/obraUtils";
-import { safeFirestorePayload } from "../utils/firestoreSafe";
+  reportContent,
+  saveReadingProgress,
+} from "../services/interactionService";
+import {
+  chapterRoute,
+  getWork,
+  getWorkChapters,
+} from "../services/workService";
 import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
+import { canWriteChapter } from "../utils/contentModel";
 
-const READER_PREFS_KEY = "umbral.readerPreferences";
-const LEGACY_READER_PREFS_KEY = "narraluna.readerPreferences";
-
-const DEFAULT_READER_PREFS = {
-  fontSize: 18,
-  fontFamily: "inter",
-  theme: "dark",
-  textWidth: 760
+const defaultStyle = {
+  fontSize: 19,
+  fontFamily: "serif",
+  width: "normal",
+  lineHeight: 1.8,
+  background: "#fffdf8",
+  color: "#242329",
 };
-
-const FONT_OPTIONS = [
-  { value: "inter", label: "Inter" },
-  { value: "serif", label: "Serif" },
-  { value: "system", label: "Sistema" }
-];
-
-const THEME_OPTIONS = [
-  { value: "dark", label: "Oscuro" },
-  { value: "light", label: "Claro" },
-  { value: "sepia", label: "Sepia" },
-  { value: "nocturne", label: "Morado nocturno" }
-];
-
-const loadReaderPreferences = () => {
-  if (typeof window === "undefined") return DEFAULT_READER_PREFS;
-
-  try {
-    const savedPreferences = JSON.parse(
-      window.localStorage.getItem(READER_PREFS_KEY) ||
-        window.localStorage.getItem(LEGACY_READER_PREFS_KEY)
-    );
-
-    return {
-      ...DEFAULT_READER_PREFS,
-      ...savedPreferences,
-      fontSize: Number(savedPreferences?.fontSize) || DEFAULT_READER_PREFS.fontSize,
-      textWidth:
-        Number(savedPreferences?.textWidth) || DEFAULT_READER_PREFS.textWidth
-    };
-  } catch {
-    return DEFAULT_READER_PREFS;
-  }
-};
-
-const sortByOrder = (items) =>
-  [...items].sort((a, b) => {
-    const orderA = Number(a.numero || a.orden || 0);
-    const orderB = Number(b.numero || b.orden || 0);
-
-    if (orderA || orderB) return orderA - orderB;
-
-    return String(a.titulo || "").localeCompare(String(b.titulo || ""));
-  });
-
-const getChapterImages = (capitulo) =>
-  Array.isArray(capitulo?.imagenes)
-    ? capitulo.imagenes
-        .map((image) => ({
-          url: String(image?.url || "").trim(),
-          caption: String(image?.caption || "").trim()
-        }))
-        .filter((image) => image.url)
-    : [];
-
-const getChapterNumber = (capitulo) =>
-  Number(capitulo?.numero || capitulo?.orden || 0) || 0;
-
-const sanitizeReadId = (value) =>
-  String(value || "item")
-    .replace(/[^a-zA-Z0-9_-]/g, "_")
-    .slice(0, 120);
-
-const saveReadingProgress = async ({
-  user,
-  obra,
-  capitulo,
-  capitulos,
-  tipo,
-  traduccionId
-}) => {
-  const now = new Date();
-  const ultimoDisponible = capitulos[capitulos.length - 1] || capitulo;
-  const chapterNumber = getChapterNumber(capitulo);
-  const lastAvailableNumber = getChapterNumber(ultimoDisponible);
-  const route =
-    tipo === "traduccion"
-      ? `/obra/${obra.id}/traducciones/${traduccionId}/capitulo/${capitulo.id}`
-      : `/obra/${obra.id}/capitulo/${capitulo.id}`;
-  const progressRef = doc(db, "usuarios", user.uid, "progreso", obra.id);
-  const userRef = doc(db, "usuarios", user.uid);
-  const readKey = [
-    obra.id,
-    tipo,
-    traduccionId || "original",
-    capitulo.id
-  ].map(sanitizeReadId).join("__");
-  const readRef = doc(db, "usuarios", user.uid, "capitulosLeidos", readKey);
-
-  const progressPayload = safeFirestorePayload({
-    userId: user.uid,
-    obraId: obra.id,
-    titulo: obra.titulo || "",
-    capituloId: capitulo.id,
-    numeroCapitulo: chapterNumber,
-    tituloCapitulo: capitulo.titulo || "",
-    fechaLectura: now,
-    tipo,
-    traduccionId: traduccionId || null,
-    ultimoDisponibleNumero: lastAvailableNumber,
-    ruta: route
-  });
-
-  await setDoc(progressRef, progressPayload, { merge: true });
-
-  const perfilUpdate = {
-    [`progresoLectura.${obra.id}`]: {
-      historiaId: obra.id,
-      obraId: obra.id,
-      titulo: obra.titulo || "",
-      ultimoCapituloId: capitulo.id,
-      ultimoCapituloTitulo: capitulo.titulo || "",
-      ultimoCapituloOrden: chapterNumber,
-      ultimoCapituloNumero: chapterNumber,
-      ultimoDisponibleNumero: lastAvailableNumber,
-      fechaLectura: now,
-      vistoEn: now,
-      tipo,
-      traduccionId: traduccionId || "",
-      ruta: route
-    },
-    updatedAt: now
-  };
-
-  await runTransaction(db, async (transaction) => {
-    const readSnap = await transaction.get(readRef);
-
-    if (!readSnap.exists()) {
-      transaction.set(
-        readRef,
-        safeFirestorePayload({
-          obraId: obra.id,
-          capituloId: capitulo.id,
-          tipo,
-          traduccionId: traduccionId || null,
-          numeroCapitulo: chapterNumber,
-          tituloCapitulo: capitulo.titulo || "",
-          fechaLectura: now,
-          ruta: route
-        })
-      );
-      transaction.set(
-        userRef,
-        {
-          ...perfilUpdate,
-          capitulosLeidos: increment(1)
-        },
-        { merge: true }
-      );
-      return;
-    }
-
-    transaction.set(userRef, perfilUpdate, { merge: true });
-  });
-};
-
 export default function ObraCapituloLectura() {
-  const { obraId, traduccionId, capituloId } = useParams();
-
-  const [obra, setObra] = useState(null);
-  const [traduccion, setTraduccion] = useState(null);
-  const [capitulos, setCapitulos] = useState([]);
-  const [capituloActual, setCapituloActual] = useState(null);
-  const [readerPrefs, setReaderPrefs] = useState(loadReaderPreferences);
-  const [loading, setLoading] = useState(true);
-  const [likedByUser, setLikedByUser] = useState(false);
-  const [chapterLikes, setChapterLikes] = useState(0);
-  const [actionBusy, setActionBusy] = useState(false);
-
+  const { obraId, capituloId } = useParams();
+  const [searchParams] = useSearchParams();
+  const translationId = searchParams.get("traduccion") || "";
+  const { user, profile } = useAuth();
+  const [work, setWork] = useState(null);
+  const [chapter, setChapter] = useState(null);
+  const [chapters, setChapters] = useState([]);
+  const [loadError, setLoadError] = useState("");
+  const [settings, setSettings] = useState(defaultStyle);
+  const setReaderSettings = useCallback((value) => setSettings(value), []);
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    window.localStorage.setItem(
-      READER_PREFS_KEY,
-      JSON.stringify(readerPrefs)
-    );
-  }, [readerPrefs]);
-
-  useEffect(() => {
-    const cargarCapitulo = async () => {
+    (async () => {
       try {
-        let obraData = null;
-        let capitulosData = [];
-
-        const obraSnap = await getDoc(doc(db, "obras", obraId));
-
-        if (obraSnap.exists()) {
-          obraData = {
-            id: obraSnap.id,
-            ...obraSnap.data()
-          };
-        } else {
-          const historiaSnap = await getDoc(doc(db, "historias", obraId));
-
-          if (historiaSnap.exists()) {
-            obraData = buildObraFromHistoria({
-              id: historiaSnap.id,
-              ...historiaSnap.data()
-            });
-          }
-        }
-
-        if (!obraData) {
-          setObra(null);
-          setCapituloActual(null);
+        setLoadError("");
+        const [workData, chapterSnapshot, chapterList] = await Promise.all([
+          getWork(obraId),
+          getDoc(doc(db, "capitulos", capituloId)),
+          getWorkChapters(obraId, translationId || null),
+        ]);
+        if (!chapterSnapshot.exists()) {
+          setLoadError("Este capítulo ya no existe.");
           return;
         }
-
-        if (traduccionId) {
-          const traduccionSnap = await getDoc(
-            doc(db, "obras", obraId, "traducciones", traduccionId)
-          );
-
-          if (!traduccionSnap.exists()) {
-            setObra(obraData);
-            setTraduccion(null);
-            setCapituloActual(null);
-            return;
-          }
-
-          const capitulosSnap = await getDocs(
-            collection(
-              db,
-              "obras",
-              obraId,
-              "traducciones",
-              traduccionId,
-              "capitulos"
-            )
-          );
-          capitulosData = sortByOrder(
-            capitulosSnap.docs.map((capituloDoc) => ({
-              id: capituloDoc.id,
-              ...capituloDoc.data()
-            })).filter((capitulo) => capitulo.estado !== "eliminado")
-          );
-
-          setTraduccion({
-            id: traduccionSnap.id,
-            ...traduccionSnap.data()
-          });
-        } else {
-          let capitulosSnap = await getDocs(
-            collection(db, "obras", obraId, "capitulos")
-          );
-
-          if (capitulosSnap.empty && obraData.historiaLegacyId) {
-            capitulosSnap = await getDocs(
-              collection(db, "historias", obraData.historiaLegacyId, "capitulos")
-            );
-          } else if (capitulosSnap.empty) {
-            try {
-              capitulosSnap = await getDocs(
-                collection(db, "historias", obraId, "capitulos")
-              );
-            } catch {
-              capitulosSnap = { docs: [] };
-            }
-          }
-
-          capitulosData = getDisplayChapters(
-            obraData,
-            capitulosSnap.docs.map((capituloDoc) => ({
-              id: capituloDoc.id,
-              ...capituloDoc.data()
-            }))
-          );
-          setTraduccion(null);
+        if (!workData) {
+          setLoadError("Esta obra ya no existe.");
+          return;
         }
-
-        const capituloEncontrado =
-          capitulosData.find((capitulo) => capitulo.id === capituloId) || null;
-
-        setObra(obraData);
-        setCapitulos(capitulosData);
-        setCapituloActual(capituloEncontrado);
-        setChapterLikes(Number(capituloEncontrado?.likesCount || 0) || 0);
-
-        if (auth.currentUser && capituloEncontrado) {
-          try {
-            const likePath = traduccionId
-              ? doc(
-                  db,
-                  "obras",
-                  obraId,
-                  "traducciones",
-                  traduccionId,
-                  "capitulos",
-                  capituloId,
-                  "likes",
-                  auth.currentUser.uid
-                )
-              : doc(
-                  db,
-                  "obras",
-                  obraId,
-                  "capitulos",
-                  capituloId,
-                  "likes",
-                  auth.currentUser.uid
-                );
-            const likeSnap = await getDoc(likePath);
-            setLikedByUser(likeSnap.exists());
-          } catch {
-            setLikedByUser(false);
-          }
-
+        const loadedChapter = {
+          id: chapterSnapshot.id,
+          ...chapterSnapshot.data(),
+        };
+        setWork(workData);
+        setChapter(loadedChapter);
+        setChapters(chapterList);
+        if (user && workData)
           await saveReadingProgress({
-            user: auth.currentUser,
-            obra: obraData,
-            capitulo: capituloEncontrado,
-            capitulos: capitulosData,
-            tipo: traduccionId ? "traduccion" : "original",
-            traduccionId
+            userId: user.uid,
+            work: workData,
+            chapter: loadedChapter,
+            latestChapter: chapterList.at(-1),
+            translationId,
           });
-        }
       } catch (error) {
-        console.error("Error completo:", error);
-      } finally {
-        setLoading(false);
+        console.error("No se pudo cargar el lector:", error);
+        setLoadError("No pudimos cargar este capítulo. Intentá nuevamente.");
       }
-    };
-
-    if (obraId && capituloId) {
-      cargarCapitulo();
-    }
-  }, [obraId, traduccionId, capituloId]);
-
-  const updateReaderPreference = (key, value) => {
-    setReaderPrefs((current) => ({
-      ...current,
-      [key]: value
-    }));
-  };
-
-  const resetReaderPreferences = () => {
-    setReaderPrefs(DEFAULT_READER_PREFS);
-  };
-
-  const toggleChapterLike = async () => {
-    const currentUser = auth.currentUser;
-
-    if (!currentUser) {
-      alert("Tenes que iniciar sesion");
-      return;
-    }
-
-    if (!capituloActual) return;
-
+    })();
+  }, [capituloId, obraId, translationId, user]);
+  const report = async () => {
+    if (!user)
+      return alert("Necesitás iniciar sesión para reportar contenido.");
+    const motive = window
+      .prompt("¿Por qué querés reportar este capítulo?")
+      ?.trim();
+    if (!motive) return;
     try {
-      setActionBusy(true);
-      const capituloRef = traduccionId
-        ? doc(
-            db,
-            "obras",
-            obraId,
-            "traducciones",
-            traduccionId,
-            "capitulos",
-            capituloId
-          )
-        : doc(db, "obras", obraId, "capitulos", capituloId);
-      const likeRef = doc(capituloRef, "likes", currentUser.uid);
-      const likeSnap = await getDoc(likeRef);
-      const nextLiked = !likeSnap.exists();
-
-      if (likeSnap.exists()) {
-        await deleteDoc(likeRef);
-      } else {
-        await setDoc(
-          likeRef,
-          safeFirestorePayload({
-            userId: currentUser.uid,
-            email: currentUser.email || "",
-            fecha: new Date()
-          })
-        );
-      }
-
-      try {
-        await updateDoc(
-          capituloRef,
-          {
-            likesCount: increment(nextLiked ? 1 : -1),
-            updatedAt: new Date()
-          }
-        );
-      } catch (counterError) {
-        console.error("No se pudo actualizar contador de capitulo:", counterError);
-      }
-
-      setLikedByUser(nextLiked);
-      setChapterLikes((current) => Math.max(0, current + (nextLiked ? 1 : -1)));
+      await reportContent({
+        userId: user.uid,
+        tipoContenido: "capitulo",
+        contenidoId: capituloId,
+        obraId,
+        motivo: motive.slice(0, 500),
+      });
+      alert("Gracias. El reporte fue enviado a moderación.");
     } catch (error) {
-      console.error("Error completo:", error);
+      console.error(error);
       alert(getFriendlyFirebaseError(error));
-    } finally {
-      setActionBusy(false);
     }
   };
-
-  if (loading) {
-    return <p className="page">Cargando capitulo...</p>;
+  if (!chapter || !work) {
+    if (loadError)
+      return (
+        <main className="page page-empty-state">
+          <h2>{loadError}</h2>
+          <Link to={`/obra/${obraId}`}>Volver a la obra</Link>
+        </main>
+      );
+    return <p className="page">Cargando lectura…</p>;
   }
-
-  if (!obra) {
-    return <p className="page">No se encontro la obra.</p>;
-  }
-
-  if (traduccionId && !traduccion) {
-    return <p className="page">No se encontro la traduccion.</p>;
-  }
-
-  if (!capituloActual) {
-    return <p className="page">No se encontro el capitulo.</p>;
-  }
-
-  const currentIndex = capitulos.findIndex(
-    (capitulo) => capitulo.id === capituloActual.id
-  );
-  const capituloAnterior = currentIndex > 0 ? capitulos[currentIndex - 1] : null;
-  const capituloSiguiente =
-    currentIndex < capitulos.length - 1 ? capitulos[currentIndex + 1] : null;
-  const chapterImages = getChapterImages(capituloActual);
-  const readerStyle = {
-    "--reader-font-size": `${readerPrefs.fontSize}px`,
-    "--reader-width": `${readerPrefs.textWidth}px`
-  };
-  const buildRoute = (capitulo) =>
-    traduccionId
-      ? `/obra/${obraId}/traducciones/${traduccionId}/capitulo/${capitulo.id}`
-      : `/obra/${obraId}/capitulo/${capitulo.id}`;
-
+  const index = chapters.findIndex((item) => item.id === chapter.id);
+  const previous = chapters[index - 1];
+  const next = chapters[index + 1];
+  const maxWidth =
+    settings.width === "narrow" ? 620 : settings.width === "wide" ? 980 : 760;
+  const editable = canWriteChapter(chapter, work, user, profile);
   return (
-    <main
-      className={`page page-reader reader-theme-${readerPrefs.theme} reader-font-${readerPrefs.fontFamily}`}
-      style={readerStyle}
-    >
-      <Link to={`/obra/${obraId}`} className="text-link">
-        Volver a la obra
+    <main className="page page-reader">
+      <Link className="text-link" to={`/obra/${obraId}`}>
+        ← Volver a la obra
       </Link>
-
-      <p className="section-kicker">
-        {traduccion ? `${obra.titulo} - ${traduccion.idiomaDestino}` : obra.titulo}
-      </p>
-      <div className="chapter-reader-heading">
-        <div>
-          <h1>{capituloActual.titulo || "Capitulo sin titulo"}</h1>
-          <p className="muted">
-            Capitulo {getChapterNumber(capituloActual) || "?"}
-            {capituloActual.estado ? ` - ${capituloActual.estado}` : ""}
-          </p>
-        </div>
-        {auth.currentUser && (
-          <button
-            type="button"
-            className="btn-link btn-link-ghost"
-            onClick={toggleChapterLike}
-            disabled={actionBusy}
-          >
-            {likedByUser ? "Quitar like" : "Dar like"} ({chapterLikes})
-          </button>
-        )}
-      </div>
-
-      <section className="reading-settings-panel" aria-label="Ajustes de lectura">
-        <div className="reading-settings-heading">
-          <div>
-            <p className="section-kicker">Lectura</p>
-            <h2>Ajustes de lectura</h2>
-          </div>
-
-          <button
-            type="button"
-            className="btn-filter-reset"
-            onClick={resetReaderPreferences}
-          >
-            Restablecer
-          </button>
-        </div>
-
-        <div className="reading-settings-grid">
-          <label className="reader-control">
-            <span>Tamano de letra</span>
-            <input
-              type="range"
-              min="16"
-              max="24"
-              value={readerPrefs.fontSize}
-              onChange={(event) =>
-                updateReaderPreference("fontSize", Number(event.target.value))
-              }
-            />
-            <strong>{readerPrefs.fontSize}px</strong>
-          </label>
-
-          <label className="reader-control">
-            <span>Fuente</span>
-            <select
-              value={readerPrefs.fontFamily}
-              onChange={(event) =>
-                updateReaderPreference("fontFamily", event.target.value)
-              }
+      <header className="chapter-reader-heading">
+        <p className="section-kicker">{work.titulo}</p>
+        <h1>
+          Capítulo {chapter.numero}: {chapter.titulo}
+        </h1>
+        <div className="hero-actions">
+          <LikeButton
+            type="capitulo"
+            contentId={chapter.id}
+            obraId={obraId}
+            count={chapter.likes}
+          />
+          {editable && (
+            <Link
+              className="btn-link btn-link-ghost"
+              to={`/capitulos/${chapter.id}/editar`}
             >
-              {FONT_OPTIONS.map((font) => (
-                <option key={font.value} value={font.value}>
-                  {font.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="reader-control">
-            <span>Ancho del texto</span>
-            <input
-              type="range"
-              min="620"
-              max="980"
-              step="20"
-              value={readerPrefs.textWidth}
-              onChange={(event) =>
-                updateReaderPreference("textWidth", Number(event.target.value))
-              }
-            />
-            <strong>{readerPrefs.textWidth}px</strong>
-          </label>
-
-          <div className="reader-control reader-theme-control">
-            <span>Fondo</span>
-            <div className="reader-theme-options">
-              {THEME_OPTIONS.map((theme) => (
-                <button
-                  key={theme.value}
-                  type="button"
-                  className={`reader-theme-option reader-theme-swatch-${theme.value}`}
-                  aria-pressed={readerPrefs.theme === theme.value}
-                  onClick={() => updateReaderPreference("theme", theme.value)}
-                >
-                  <span aria-hidden="true" />
-                  {theme.label}
-                </button>
-              ))}
-            </div>
-          </div>
+              Editar
+            </Link>
+          )}
+          <button type="button" className="btn-secondary" onClick={report}>
+            Reportar
+          </button>
         </div>
-      </section>
-
-      <section className="reader-surface">
-        <article className="chapter-content">
-          {capituloActual.contenido}
-        </article>
-
-        {chapterImages.length > 0 && (
-          <div className="chapter-images">
-            {chapterImages.map((image) => (
-              <figure key={image.url} className="chapter-image">
-                <img src={image.url} alt={image.caption || capituloActual.titulo} />
-                {image.caption && <figcaption>{image.caption}</figcaption>}
-              </figure>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <nav className="chapter-navigation" aria-label="Navegacion de capitulos">
-        {capituloAnterior ? (
-          <Link to={buildRoute(capituloAnterior)} className="btn-link btn-link-ghost">
-            Capitulo anterior
+      </header>
+      <ReadingSettings
+        key={user?.uid || "guest"}
+        userId={user?.uid}
+        onChange={setReaderSettings}
+      />
+      <article
+        className={`reader-surface reader-font-${settings.fontFamily}`}
+        style={{
+          maxWidth,
+          fontSize: `${settings.fontSize}px`,
+          lineHeight: settings.lineHeight,
+          background: settings.background,
+          color: settings.color,
+        }}
+      >
+        <ChapterBlocks blocks={chapter.bloques || []} />
+      </article>
+      <nav className="chapter-navigation">
+        {previous ? (
+          <Link
+            className="btn-link btn-link-ghost"
+            to={chapterRoute(obraId, previous.id, translationId || null)}
+          >
+            ← Anterior
           </Link>
         ) : (
-          <span className="chapter-nav-disabled">Capitulo anterior</span>
+          <span className="chapter-nav-disabled">No hay capítulo anterior</span>
         )}
-
-        {capituloSiguiente ? (
-          <Link to={buildRoute(capituloSiguiente)} className="btn-link btn-link-primary">
-            Capitulo siguiente
+        <Link className="btn-link btn-link-ghost" to={`/obra/${obraId}`}>
+          Lista de capítulos
+        </Link>
+        {next ? (
+          <Link
+            className="btn-link btn-link-primary"
+            to={chapterRoute(obraId, next.id, translationId || null)}
+          >
+            Siguiente →
           </Link>
         ) : (
-          <span className="chapter-nav-disabled">Capitulo siguiente</span>
+          <span className="chapter-nav-disabled">Último capítulo</span>
         )}
       </nav>
+      <CommentsSection type="capitulo" contentId={chapter.id} obraId={obraId} />
     </main>
   );
 }

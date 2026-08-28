@@ -25,7 +25,7 @@ export const parseChapterImages = (value) => {
 
       return {
         url: textOrEmpty(url),
-        caption: textOrEmpty(captionParts.join("|"))
+        caption: textOrEmpty(captionParts.join("|")),
       };
     })
     .filter((image) => image.url);
@@ -37,7 +37,9 @@ export const assertNoUndefined = (value, path = "payload") => {
   }
 
   if (Array.isArray(value)) {
-    value.forEach((item, index) => assertNoUndefined(item, `${path}[${index}]`));
+    value.forEach((item, index) =>
+      assertNoUndefined(item, `${path}[${index}]`),
+    );
     return;
   }
 

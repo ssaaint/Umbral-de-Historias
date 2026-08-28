@@ -1,505 +1,210 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import { doc, serverTimestamp, updateDoc } from "firebase/firestore";
+import { db } from "../firebase";
+import { useAuth } from "../hooks/useAuth";
 import {
-  collection,
-  doc,
-  getDoc,
-  getDocs,
-  setDoc,
-  updateDoc
-} from "firebase/firestore";
-import { auth, db } from "../firebase";
-import {
-  OBRA_TYPE_EXTERNAL,
-  OBRA_TYPE_ORIGINAL,
-  buildObraFromHistoria
-} from "../utils/obraUtils";
-import {
-  listOrEmpty,
-  safeFirestorePayload,
-  textOrEmpty
-} from "../utils/firestoreSafe";
-import {
-  canManageCollaborators,
-  normalizeCollaborators,
-  userCanDeleteWork,
-  userCanManageStory
-} from "../utils/permissionUtils";
+  GENRES,
+  WORK_STATES,
+  canManageWork,
+  cleanText,
+  isAdmin,
+  toTextList,
+  toUidList,
+} from "../utils/contentModel";
 import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
-
-const listToInput = (value) =>
-  Array.isArray(value) ? value.join(", ") : String(value || "");
-
-const multilineToList = (value) => normalizeCollaborators(value);
-
-const stripTransientFields = (data) => {
-  const clean = { ...data };
-  delete clean.id;
-  delete clean.source;
-  delete clean.route;
-  delete clean.detailRoute;
-  delete clean.tipoLegible;
-  return clean;
-};
+import { getWork } from "../services/workService";
 
 export default function EditarObra() {
   const { obraId } = useParams();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
-
-  const [obra, setObra] = useState(null);
-  const [source, setSource] = useState("");
-  const [perfil, setPerfil] = useState({});
-  const [loading, setLoading] = useState(true);
+  const [work, setWork] = useState(null);
+  const [form, setForm] = useState(null);
   const [saving, setSaving] = useState(false);
-  const [titulo, setTitulo] = useState("");
-  const [descripcion, setDescripcion] = useState("");
-  const [generos, setGeneros] = useState("");
-  const [etiquetas, setEtiquetas] = useState("");
-  const [portadaUrl, setPortadaUrl] = useState("");
-  const [autorOriginal, setAutorOriginal] = useState("");
-  const [idiomaOriginal, setIdiomaOriginal] = useState("");
-  const [paisOrigen, setPaisOrigen] = useState("");
-  const [permiteTraducciones, setPermiteTraducciones] = useState(false);
-  const [colaboradores, setColaboradores] = useState("");
-  const [traductoresAutorizados, setTraductoresAutorizados] = useState("");
-
-  function hydrateForm(data) {
-    setTitulo(data.titulo || "");
-    setDescripcion(data.descripcion || "");
-    setGeneros(listToInput(data.generos));
-    setEtiquetas(listToInput(data.etiquetas));
-    setPortadaUrl(data.portadaUrl || data.portada || "");
-    setAutorOriginal(data.autorOriginal || "");
-    setIdiomaOriginal(data.idiomaOriginal || "");
-    setPaisOrigen(data.paisOrigen || "");
-    setPermiteTraducciones(data.permiteTraducciones === true);
-    setColaboradores((data.colaboradoresPermitidos || []).join("\n"));
-    setTraductoresAutorizados((data.traductoresAutorizados || []).join("\n"));
-  }
-
   useEffect(() => {
-    const cargarObra = async () => {
-      try {
-        const obraSnap = await getDoc(doc(db, "obras", obraId));
-
-        if (obraSnap.exists()) {
-          const data = {
-            id: obraSnap.id,
-            source: "obras",
-            ...obraSnap.data()
-          };
-          setObra(data);
-          setSource("obras");
-          hydrateForm(data);
-          return;
-        }
-
-        const historiaSnap = await getDoc(doc(db, "historias", obraId));
-
-        if (historiaSnap.exists()) {
-          const data = buildObraFromHistoria({
-            id: historiaSnap.id,
-            ...historiaSnap.data()
-          });
-          setObra(data);
-          setSource("historias");
-          hydrateForm(data);
-          return;
-        }
-
-        setObra(null);
-      } catch (error) {
-        console.error("Error completo:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    const cargarPerfil = async () => {
-      if (!auth.currentUser) {
-        setPerfil({});
-        return;
-      }
-
-      try {
-        const perfilSnap = await getDoc(doc(db, "usuarios", auth.currentUser.uid));
-        setPerfil(perfilSnap.exists() ? perfilSnap.data() : {});
-      } catch (error) {
-        console.error("No se pudo cargar el perfil para permisos:", error);
-        setPerfil({});
-      }
-    };
-
-    if (obraId) {
-      cargarObra();
-      cargarPerfil();
-    }
+    getWork(obraId)
+      .then((loaded) => {
+        setWork(loaded);
+        setForm(
+          loaded && {
+            titulo: loaded.titulo || "",
+            descripcion: loaded.descripcion || "",
+            portadaUrl: loaded.portadaUrl || "",
+            generos: loaded.generos || [],
+            etiquetas: (loaded.etiquetas || []).join(", "),
+            idiomaOriginal: loaded.idiomaOriginal || "",
+            estado: loaded.estado || "en_progreso",
+            autorOriginal: loaded.autorOriginal || "",
+            origenUrl: loaded.origenUrl || "",
+            colaboradores: (loaded.colaboradores || []).join("\n"),
+          },
+        );
+      })
+      .catch(console.error);
   }, [obraId]);
-
-  const puedeEditar = userCanManageStory(auth.currentUser, obra, perfil);
-  const puedeBorrar = userCanDeleteWork(auth.currentUser, obra, perfil);
-  const puedeGestionarPermisos = canManageCollaborators(obra, perfil, auth.currentUser);
-  const esObraExterna = obra?.tipo === OBRA_TYPE_EXTERNAL;
-
-  const buildUpdatePayload = () => {
-    const tituloFinal = textOrEmpty(titulo);
-
-    if (!tituloFinal) {
-      throw new Error("El titulo es obligatorio.");
-    }
-
-    const generosFinales = listOrEmpty(generos);
-    const etiquetasFinales = listOrEmpty(etiquetas);
-    const portadaFinal = textOrEmpty(portadaUrl);
-    const now = new Date();
-    const payload = {
-      titulo: tituloFinal,
-      descripcion: textOrEmpty(descripcion),
-      generos: generosFinales,
-      etiquetas: etiquetasFinales,
-      portada: portadaFinal,
-      portadaUrl: portadaFinal,
-      autorOriginal: esObraExterna ? textOrEmpty(autorOriginal) : "",
-      idiomaOriginal: esObraExterna ? textOrEmpty(idiomaOriginal) : "",
-      paisOrigen: esObraExterna ? textOrEmpty(paisOrigen) : "",
-      fechaActualizacion: now,
-      updatedAt: now
-    };
-
-    if (puedeGestionarPermisos) {
-      const canTranslate = Boolean(permiteTraducciones);
-      payload.permiteTraducciones = canTranslate;
-      payload.estadoTraducible = canTranslate;
-      payload.colaboradoresPermitidos = multilineToList(colaboradores);
-      payload.traductoresAutorizados = multilineToList(traductoresAutorizados);
-    }
-
-    return safeFirestorePayload(payload);
-  };
-
-  const guardarCambios = async () => {
-    if (!auth.currentUser) {
-      alert("Tenes que iniciar sesion");
-      return;
-    }
-
-    if (!puedeEditar) {
-      alert("No tenes permisos para editar esta obra.");
-      return;
-    }
-
-    try {
-      setSaving(true);
-      const updatePayload = buildUpdatePayload();
-      const ref = doc(db, source === "obras" ? "obras" : "historias", obraId);
-
-      await updateDoc(ref, updatePayload);
-
-      if (source === "historias") {
-        try {
-          await setDoc(
-            doc(db, "obras", obraId),
-            safeFirestorePayload({
-              ...stripTransientFields(buildObraFromHistoria({
-                ...obra,
-                ...updatePayload,
-                id: obraId
-              })),
-              ...updatePayload,
-              tipo: obra.tipo || OBRA_TYPE_ORIGINAL,
-              autorId: obra.autorId || obra.creadoPor || auth.currentUser.uid,
-              creadoPor: obra.creadoPor || obra.autorId || auth.currentUser.uid,
-              historiaLegacyId: obraId,
-              legacySource: "historias"
-            }),
-            { merge: true }
-          );
-        } catch (mirrorError) {
-          console.error("No se pudo reflejar la edicion legacy en obras:", mirrorError);
-        }
-      }
-
-      alert("Obra actualizada");
-      navigate(`/obra/${obraId}`);
-    } catch (error) {
-      console.error("Error completo:", error);
-      alert(getFriendlyFirebaseError(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const migrarAObra = async () => {
-    if (!auth.currentUser) {
-      alert("Tenes que iniciar sesion");
-      return;
-    }
-
-    if (!puedeEditar) {
-      alert("No tenes permisos para editar esta obra.");
-      return;
-    }
-
-    try {
-      setSaving(true);
-      const updatePayload = buildUpdatePayload();
-      const obraPayload = safeFirestorePayload({
-        ...stripTransientFields(buildObraFromHistoria({
-          ...obra,
-          ...updatePayload,
-          id: obraId
-        })),
-        ...updatePayload,
-        tipo: obra.tipo || OBRA_TYPE_ORIGINAL,
-        autorId: obra.autorId || obra.creadoPor || auth.currentUser.uid,
-        creadoPor: obra.creadoPor || obra.autorId || auth.currentUser.uid,
-        historiaLegacyId: obraId,
-        legacySource: "historias"
-      });
-
-      await setDoc(doc(db, "obras", obraId), obraPayload, { merge: true });
-
-      const capitulosSnap = await getDocs(
-        collection(db, "historias", obraId, "capitulos")
-      );
-
-      await Promise.all(
-        capitulosSnap.docs.map((capituloDoc) =>
-          setDoc(
-            doc(db, "obras", obraId, "capitulos", capituloDoc.id),
-            safeFirestorePayload({
-              ...capituloDoc.data(),
-              origen: "original",
-              historiaLegacyId: obraId
-            }),
-            { merge: true }
-          )
-        )
-      );
-
-      alert("Historia migrada a obras sin borrar la original");
-      navigate(`/obra/${obraId}`);
-    } catch (error) {
-      console.error("Error completo:", error);
-      alert(getFriendlyFirebaseError(error));
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const eliminarObra = async () => {
-    if (!auth.currentUser || !puedeBorrar) {
-      alert("No tenes permisos para eliminar esta obra.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      "¿Seguro que querés eliminar esta obra? Esta acción no se puede deshacer."
+  const set = (key, value) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  const toggleGenre = (genre) =>
+    set(
+      "generos",
+      form.generos.includes(genre)
+        ? form.generos.filter((item) => item !== genre)
+        : [...form.generos, genre].slice(0, 4),
     );
-
-    if (!confirmed) return;
-
+  const allowed = canManageWork(work, user, profile);
+  const save = async () => {
+    const title = cleanText(form.titulo);
+    if (
+      !title ||
+      title.length > 120 ||
+      cleanText(form.descripcion).length < 20 ||
+      !form.generos.length
+    )
+      return alert("Completá título, descripción y al menos un género.");
     try {
       setSaving(true);
-      const now = new Date();
-
-      await setDoc(
-        doc(db, "obras", obraId),
-        safeFirestorePayload({
-          estado: "eliminada",
-          deletedAt: now,
-          deletedBy: auth.currentUser.uid,
-          fechaActualizacion: now,
-          updatedAt: now
-        }),
-        { merge: true }
-      );
-
-      if (source === "historias") {
-        try {
-          await updateDoc(doc(db, "historias", obraId), {
-            estado: "eliminada",
-            deletedAt: now,
-            deletedBy: auth.currentUser.uid,
-            updatedAt: now
-          });
-        } catch (legacyError) {
-          console.error("No se pudo marcar la historia antigua como eliminada:", legacyError);
-        }
-      }
-
-      navigate("/explorar");
+      const data = {
+        titulo: title,
+        descripcion: cleanText(form.descripcion),
+        portadaUrl: cleanText(form.portadaUrl),
+        generos: form.generos,
+        etiquetas: toTextList(form.etiquetas),
+        idiomaOriginal: cleanText(form.idiomaOriginal),
+        estado: form.estado,
+        autorOriginal:
+          work.tipo === "externa" ? cleanText(form.autorOriginal) : "",
+        origenUrl: work.tipo === "externa" ? cleanText(form.origenUrl) : "",
+        fechaActualizacion: serverTimestamp(),
+      };
+      if (allowed) data.colaboradores = toUidList(form.colaboradores);
+      await updateDoc(doc(db, "obras", obraId), data);
+      navigate(`/obra/${obraId}`);
     } catch (error) {
-      console.error("Error completo:", error);
+      console.error("No se pudo editar la obra:", error);
       alert(getFriendlyFirebaseError(error));
     } finally {
       setSaving(false);
     }
   };
-
-  if (loading) {
-    return <p className="page">Cargando historia...</p>;
-  }
-
-  if (!obra) {
-    return <p className="page">No se encontro la historia.</p>;
-  }
-
-  if (!auth.currentUser || !puedeEditar) {
-    return <p className="page">No tenes permisos para editar esta obra.</p>;
-  }
-
+  if (!work || !form) return <p className="page">Cargando obra…</p>;
+  if (!allowed)
+    return <p className="page">No tenés permisos para editar esta obra.</p>;
   return (
     <main className="page page-form">
-      <Link to={`/obra/${obraId}`} className="text-link">
-        Volver al detalle
+      <Link className="text-link" to={`/obra/${obraId}`}>
+        Volver a la obra
       </Link>
-
       <p className="section-kicker">
-        {source === "historias" ? "Historia antigua" : "Obra"}
+        {work.tipo === "externa" ? "Obra externa" : "Obra original"}
       </p>
       <h2>Editar obra</h2>
-
       <input
-        placeholder="Titulo"
-        value={titulo}
-        onChange={(event) => setTitulo(event.target.value)}
         className="form-field"
+        maxLength="120"
+        value={form.titulo}
+        onChange={(event) => set("titulo", event.target.value)}
       />
-
       <textarea
-        placeholder="Descripcion"
-        value={descripcion}
-        onChange={(event) => setDescripcion(event.target.value)}
-        rows={4}
         className="form-field full-width"
+        rows={5}
+        maxLength="3000"
+        value={form.descripcion}
+        onChange={(event) => set("descripcion", event.target.value)}
       />
-
       <input
-        placeholder="Generos separados por coma"
-        value={generos}
-        onChange={(event) => setGeneros(event.target.value)}
         className="form-field"
-      />
-
-      <input
-        placeholder="Etiquetas separadas por coma"
-        value={etiquetas}
-        onChange={(event) => setEtiquetas(event.target.value)}
-        className="form-field"
-      />
-
-      <input
+        maxLength="2048"
+        value={form.portadaUrl}
         placeholder="URL de portada"
-        value={portadaUrl}
-        onChange={(event) => setPortadaUrl(event.target.value)}
-        className="form-field"
+        onChange={(event) => set("portadaUrl", event.target.value)}
       />
-
-      <div className="image-preview">
-        <div className="image-preview-frame">
-          {portadaUrl ? (
-            <img src={portadaUrl} alt="Vista previa de portada" />
-          ) : (
-            <span>{(titulo || "U").slice(0, 1).toUpperCase()}</span>
-          )}
-        </div>
-        <p>Vista previa de portada</p>
+      <div className="form-grid">
+        <label className="filter-field">
+          <span>Estado</span>
+          <select
+            value={form.estado}
+            onChange={(event) => set("estado", event.target.value)}
+          >
+            {WORK_STATES.map((item) => (
+              <option key={item} value={item}>
+                {item.replace("_", " ")}
+              </option>
+            ))}
+          </select>
+        </label>
+        <input
+          className="form-field"
+          maxLength="60"
+          value={form.idiomaOriginal}
+          placeholder="Idioma original"
+          onChange={(event) => set("idiomaOriginal", event.target.value)}
+        />
       </div>
-
-      {esObraExterna && (
+      {work.tipo === "externa" && (
         <>
           <input
-            placeholder="Autor original"
-            value={autorOriginal}
-            onChange={(event) => setAutorOriginal(event.target.value)}
             className="form-field"
+            maxLength="120"
+            value={form.autorOriginal}
+            placeholder="Autor original"
+            onChange={(event) => set("autorOriginal", event.target.value)}
           />
-
-          <div className="form-grid">
-            <input
-              placeholder="Idioma original"
-              value={idiomaOriginal}
-              onChange={(event) => setIdiomaOriginal(event.target.value)}
-              className="form-field"
-            />
-
-            <input
-              placeholder="Pais de origen"
-              value={paisOrigen}
-              onChange={(event) => setPaisOrigen(event.target.value)}
-              className="form-field"
-            />
-          </div>
+          <input
+            className="form-field"
+            maxLength="2048"
+            value={form.origenUrl}
+            placeholder="URL de origen"
+            onChange={(event) => set("origenUrl", event.target.value)}
+          />
         </>
       )}
-
-      {puedeGestionarPermisos ? (
+      <section className="home-section">
+        <div className="section-heading">
+          <h3>Géneros</h3>
+        </div>
+        <div className="genre-grid">
+          {GENRES.map((genre) => (
+            <button
+              type="button"
+              key={genre}
+              className={
+                form.generos.includes(genre)
+                  ? "genre-tile genre-tile-active"
+                  : "genre-tile"
+              }
+              onClick={() => toggleGenre(genre)}
+            >
+              {genre}
+            </button>
+          ))}
+        </div>
+      </section>
+      <input
+        className="form-field"
+        value={form.etiquetas}
+        placeholder="Etiquetas separadas por coma"
+        onChange={(event) => set("etiquetas", event.target.value)}
+      />
+      {(work.autorId === user?.uid || isAdmin(profile)) && (
         <section className="advanced-settings-panel">
-          <div className="section-heading">
-            <p className="section-kicker">Ajustes avanzados</p>
-            <h3>Permisos y traducciones</h3>
-          </div>
-
-          <label className="form-check">
-            <input
-              type="checkbox"
-              checked={permiteTraducciones}
-              onChange={(event) => setPermiteTraducciones(event.target.checked)}
-            />
-            Permitir traducciones de esta obra
-          </label>
-
+          <p className="section-kicker">Colaboradores</p>
           <textarea
-            placeholder="Colaboradores permitidos, un UID o email por linea"
-            value={colaboradores}
-            onChange={(event) => setColaboradores(event.target.value)}
-            rows={4}
             className="form-field full-width"
-          />
-
-          <textarea
-            placeholder="Traductores autorizados, un UID o email por linea"
-            value={traductoresAutorizados}
-            onChange={(event) => setTraductoresAutorizados(event.target.value)}
             rows={4}
-            className="form-field full-width"
+            value={form.colaboradores}
+            placeholder="UID de cada colaborador, uno por línea"
+            onChange={(event) => set("colaboradores", event.target.value)}
           />
+          <p className="permission-note">
+            Los colaboradores pueden crear capítulos y editar o eliminar los
+            propios. No pueden administrar colaboradores.
+          </p>
         </section>
-      ) : (
-        <p className="permission-note">
-          Podes editar la informacion de la obra, pero solo el autor o un
-          administrador pueden modificar colaboradores y traductores.
-        </p>
       )}
-
-      <div className="form-actions">
-        <button onClick={guardarCambios} disabled={saving}>
-          Guardar cambios
-        </button>
-
-        {source === "historias" && (
-          <button
-            type="button"
-            className="btn-filter-reset"
-            onClick={migrarAObra}
-            disabled={saving}
-          >
-            Migrar a obras
-          </button>
-        )}
-
-        {puedeBorrar && (
-          <button
-            type="button"
-            className="btn-danger"
-            onClick={eliminarObra}
-            disabled={saving}
-          >
-            Eliminar obra
-          </button>
-        )}
-      </div>
+      <button type="button" disabled={saving} onClick={save}>
+        {saving ? "Guardando…" : "Guardar cambios"}
+      </button>
     </main>
   );
 }

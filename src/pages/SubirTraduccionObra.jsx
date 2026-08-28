@@ -1,312 +1,142 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import {
-  addDoc,
   collection,
+  serverTimestamp,
+  writeBatch,
   doc,
-  getDoc,
-  increment,
-  setDoc
 } from "firebase/firestore";
-import { auth, db } from "../firebase";
-import ChapterImagesInput from "../components/ChapterImagesInput";
+import { db } from "../firebase";
+import { useAuth } from "../hooks/useAuth";
+import ChapterBlocksEditor from "../components/ChapterBlocksEditor";
 import {
-  TRANSLATION_STATUS_PENDING,
-  TRANSLATOR_REQUIREMENT_MESSAGE,
-  buildObraFromHistoria,
-  obraAllowsTranslations,
-  userCanUploadTranslation
-} from "../utils/obraUtils";
-import {
-  parseChapterImages,
-  safeFirestorePayload,
-  textOrEmpty
-} from "../utils/firestoreSafe";
+  blockText,
+  canTranslate,
+  cleanText,
+  DISCORD_URL,
+  remainingChaptersForTranslation,
+  TRANSLATOR_REQUIREMENTS,
+  validateBlocks,
+} from "../utils/contentModel";
 import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
-
-const getPersistableObra = (obra) => {
-  const data = { ...obra };
-  delete data.id;
-  delete data.tipoLegible;
-  return data;
-};
+import { getWork } from "../services/workService";
 
 export default function SubirTraduccionObra() {
   const { obraId } = useParams();
+  const { user, profile } = useAuth();
   const navigate = useNavigate();
-
-  const [obra, setObra] = useState(null);
-  const [perfil, setPerfil] = useState({});
-  const [obraExiste, setObraExiste] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [tituloTraduccion, setTituloTraduccion] = useState("");
-  const [idiomaOrigen, setIdiomaOrigen] = useState("es");
-  const [idiomaDestino, setIdiomaDestino] = useState("");
-  const [tituloCapitulo, setTituloCapitulo] = useState("Capitulo 1");
-  const [contenido, setContenido] = useState("");
-  const [imagenesCapitulo, setImagenesCapitulo] = useState("");
-
+  const [work, setWork] = useState(null);
+  const [language, setLanguage] = useState("");
+  const [title, setTitle] = useState("Capítulo 1");
+  const [blocks, setBlocks] = useState([{ tipo: "texto", contenido: "" }]);
+  const [saving, setSaving] = useState(false);
   useEffect(() => {
-    const cargarDatos = async () => {
-      try {
-        let obraSnap = null;
-
-        try {
-          obraSnap = await getDoc(doc(db, "obras", obraId));
-        } catch {
-          obraSnap = null;
-        }
-
-        if (obraSnap?.exists()) {
-          const obraData = {
-            id: obraSnap.id,
-            ...obraSnap.data()
-          };
-          setObra(obraData);
-          setTituloTraduccion(`${obraData.titulo || "Obra"} - Traduccion`);
-          setObraExiste(true);
-        } else {
-          const historiaSnap = await getDoc(doc(db, "historias", obraId));
-
-          if (historiaSnap.exists()) {
-            const obraData = buildObraFromHistoria({
-              id: historiaSnap.id,
-              ...historiaSnap.data()
-            });
-            setObra(obraData);
-            setTituloTraduccion(`${obraData.titulo || "Obra"} - Traduccion`);
-            setObraExiste(false);
-          } else {
-            setObra(null);
-          }
-        }
-
-        if (auth.currentUser) {
-          const perfilSnap = await getDoc(doc(db, "usuarios", auth.currentUser.uid));
-          setPerfil(perfilSnap.exists() ? perfilSnap.data() : {});
-        } else {
-          setPerfil({});
-        }
-      } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    if (obraId) {
-      cargarDatos();
-    }
+    getWork(obraId).then(setWork).catch(console.error);
   }, [obraId]);
-
-  const puedeSubirTraduccion = userCanUploadTranslation(
-    auth.currentUser,
-    perfil,
-    obra || {}
-  );
-  const permiteTraducciones = obraAllowsTranslations(obra || {});
-
-  const publicarTraduccion = async () => {
-    const currentUser = auth.currentUser;
-
-    if (!currentUser) {
-      alert("Tenes que iniciar sesion");
-      return;
-    }
-
-    if (!permiteTraducciones || !puedeSubirTraduccion) {
-      alert(TRANSLATOR_REQUIREMENT_MESSAGE);
-      return;
-    }
-
-    const tituloTraduccionFinal = textOrEmpty(tituloTraduccion);
-    const idiomaOrigenFinal = textOrEmpty(idiomaOrigen);
-    const idiomaDestinoFinal = textOrEmpty(idiomaDestino);
-    const tituloCapituloFinal = textOrEmpty(tituloCapitulo) || "Capitulo traducido";
-    const contenidoFinal = textOrEmpty(contenido);
-    const imagenesFinales = parseChapterImages(imagenesCapitulo);
-
-    if (!tituloTraduccionFinal || !idiomaDestinoFinal || !contenidoFinal) {
-      alert("Completa titulo, idioma destino y contenido traducido");
-      return;
-    }
-
+  const save = async () => {
+    const contentError = validateBlocks(blocks);
+    if (!canTranslate(profile))
+      return alert(
+        `Todavía no cumplís el requisito de ${TRANSLATOR_REQUIREMENTS.minChaptersRead} capítulos leídos. Podés solicitar orientación en Discord.`,
+      );
+    if (!profile?.usernameNormalizado)
+      return alert("Primero elegí tu nombre de usuario desde tu perfil.");
+    if (!cleanText(language) || !cleanText(title) || contentError)
+      return alert(contentError || "Completá idioma y capítulo inicial.");
     try {
-      const obraRef = doc(db, "obras", obraId);
-      const now = new Date();
-      const perfilSnap = await getDoc(doc(db, "usuarios", currentUser.uid));
-      const perfil = perfilSnap.exists() ? perfilSnap.data() : {};
-      const traductorNombre =
-        textOrEmpty(perfil.nombre) || currentUser.email || "Usuario";
-
-      if (!obraExiste) {
-        await setDoc(
-          obraRef,
-          safeFirestorePayload({
-            ...getPersistableObra(obra),
-            createdFromLegacy: true,
-            updatedAt: now
-          }),
-          { merge: true }
-        );
-      }
-
-      const traduccionRef = await addDoc(
-        collection(db, "obras", obraId, "traducciones"),
-        safeFirestorePayload({
-          titulo: tituloTraduccionFinal,
-          tipo: "traduccion",
-          estado: TRANSLATION_STATUS_PENDING,
-          idiomaOrigen: idiomaOrigenFinal,
-          idiomaDestino: idiomaDestinoFinal,
-          traductorPrincipalId: currentUser.uid,
-          traductorPrincipalNombre: traductorNombre,
-          traductorId: currentUser.uid,
-          traductorEmail: currentUser.email || "",
-          capitulosCount: 1,
-          notificacionesPreparadas: {
-            nuevoCapituloTraducido: true,
-            traduccionPendiente: true,
-            traduccionAprobada: true
-          },
-          fecha: now,
-          updatedAt: now
-        })
-      );
-
-      await addDoc(
-        collection(
-          db,
-          "obras",
-          obraId,
-          "traducciones",
-          traduccionRef.id,
-          "capitulos"
-        ),
-        safeFirestorePayload({
-          titulo: tituloCapituloFinal,
-          contenido: contenidoFinal,
-          imagenes: imagenesFinales,
-          orden: 1,
-          numero: 1,
-          estado: TRANSLATION_STATUS_PENDING,
-          idiomaDestino: idiomaDestinoFinal,
-          traductorId: currentUser.uid,
-          traductorNombre,
-          traductorEmail: currentUser.email || "",
-          fecha: now,
-          fechaSubida: now,
-          updatedAt: now,
-          notificacionesPreparadas: {
-            nuevoCapituloTraducido: true,
-            traduccionPendiente: true,
-            traduccionAprobada: true
-          }
-        })
-      );
-
-      await setDoc(
-        obraRef,
-        {
-          "estadisticas.traduccionesCount": increment(1),
-          traduccionesDisponibles: [],
-          fechaActualizacion: now,
-          updatedAt: now
-        },
-        { merge: true }
-      );
-
-      alert("Traduccion enviada como pendiente");
+      setSaving(true);
+      const translationRef = doc(collection(db, "traducciones"));
+      const chapterRef = doc(collection(db, "capitulos"));
+      const batch = writeBatch(db);
+      batch.set(translationRef, {
+        obraId,
+        idioma: cleanText(language),
+        traductorPrincipalId: user.uid,
+        traductorPrincipalNombre:
+          profile?.nombre || user.email?.split("@")[0] || "Traductor",
+        traductorPrincipalUsername: profile?.username || "",
+        traductores: [user.uid],
+        estado: "publicada",
+        likes: 0,
+        comentariosCount: 0,
+        capitulosCount: 0,
+        fechaCreacion: serverTimestamp(),
+        fechaActualizacion: serverTimestamp(),
+      });
+      batch.set(chapterRef, {
+        obraId,
+        traduccionId: translationRef.id,
+        titulo: cleanText(title),
+        numero: 1,
+        bloques: blocks,
+        contenidoTexto: blockText(blocks).slice(0, 50000),
+        autorId: user.uid,
+        autorNombre:
+          profile?.nombre || user.email?.split("@")[0] || "Traductor",
+        autorUsername: profile?.username || "",
+        fechaCreacion: serverTimestamp(),
+        fechaActualizacion: serverTimestamp(),
+        vistas: 0,
+        likes: 0,
+        comentariosCount: 0,
+      });
+      await batch.commit();
       navigate(`/obra/${obraId}`);
     } catch (error) {
-      console.error("Error completo al subir traduccion:", error);
-
-      if (error?.code === "permission-denied") {
-        console.error("Revisa reglas de Firestore: permiso denegado al subir traduccion.");
-      }
-
+      console.error("No se pudo crear la traducción:", error);
       alert(getFriendlyFirebaseError(error));
+    } finally {
+      setSaving(false);
     }
   };
-
-  if (loading) {
-    return <p className="page">Cargando obra...</p>;
-  }
-
-  if (!obra) {
-    return <p className="page">No se encontro la obra.</p>;
-  }
-
-  if (!auth.currentUser || !permiteTraducciones || !puedeSubirTraduccion) {
+  if (!work) return <p className="page">Cargando obra…</p>;
+  if (!user || !canTranslate(profile) || work.tipo !== "externa")
     return (
       <main className="page page-form">
-        <Link to={`/obra/${obraId}`} className="text-link">
-          Volver a la obra
-        </Link>
-        <p className="section-kicker">{obra.titulo}</p>
-        <h2>Subir capitulo traducido</h2>
-        <p className="empty-state">
-          {permiteTraducciones
-            ? TRANSLATOR_REQUIREMENT_MESSAGE
-            : "Esta obra no acepta traducciones por ahora."}
+        <h2>Traducciones de obras externas</h2>
+        <p>
+          Umbral de Historias administra las fichas de obras externas. Las obras
+          originales de usuarios no se convierten automáticamente en
+          traducibles.
         </p>
+        {user && profile?.traduccionBloqueada !== true && (
+          <p>
+            Te faltan {remainingChaptersForTranslation(profile)} de los{" "}
+            {TRANSLATOR_REQUIREMENTS.minChaptersRead} capítulos requeridos,
+            salvo que administración te otorgue el permiso manualmente.
+          </p>
+        )}
+        <a href={DISCORD_URL} target="_blank" rel="noreferrer">
+          Consultar en Discord
+        </a>
       </main>
     );
-  }
-
   return (
     <main className="page page-form">
-      <Link to={`/obra/${obraId}`} className="text-link">
-        Volver a la obra
-      </Link>
-
-      <p className="section-kicker">{obra.titulo}</p>
-      <h2>Subir capitulo traducido</h2>
-
+      <p className="section-kicker">{work.titulo}</p>
+      <h2>Nueva traducción</h2>
+      <p className="permission-note">
+        La traducción queda asociada a esta obra externa y conserva el idioma
+        original: {work.idiomaOriginal}.
+      </p>
       <input
-        placeholder="Titulo de la traduccion"
-        value={tituloTraduccion}
-        onChange={(event) => setTituloTraduccion(event.target.value)}
         className="form-field"
+        value={language}
+        maxLength="60"
+        placeholder="Idioma de la traducción"
+        onChange={(event) => setLanguage(event.target.value)}
       />
-
-      <div className="form-grid">
-        <input
-          placeholder="Idioma origen"
-          value={idiomaOrigen}
-          onChange={(event) => setIdiomaOrigen(event.target.value)}
-          className="form-field"
-        />
-
-        <input
-          placeholder="Idioma destino"
-          value={idiomaDestino}
-          onChange={(event) => setIdiomaDestino(event.target.value)}
-          className="form-field"
-        />
-      </div>
-
       <input
-        placeholder="Titulo del capitulo traducido"
-        value={tituloCapitulo}
-        onChange={(event) => setTituloCapitulo(event.target.value)}
         className="form-field"
+        value={title}
+        maxLength="180"
+        placeholder="Título del capítulo inicial"
+        onChange={(event) => setTitle(event.target.value)}
       />
-
-      <textarea
-        placeholder="Contenido traducido..."
-        value={contenido}
-        onChange={(event) => setContenido(event.target.value)}
-        rows={12}
-        className="form-field full-width"
-      />
-
-      <ChapterImagesInput
-        value={imagenesCapitulo}
-        onChange={setImagenesCapitulo}
-      />
-
-      <button onClick={publicarTraduccion}>Enviar traduccion pendiente</button>
+      <ChapterBlocksEditor blocks={blocks} onChange={setBlocks} />
+      <button type="button" disabled={saving} onClick={save}>
+        {saving ? "Creando…" : "Publicar traducción"}
+      </button>
     </main>
   );
 }

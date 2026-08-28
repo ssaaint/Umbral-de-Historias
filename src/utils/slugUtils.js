@@ -16,7 +16,7 @@ export const createUniqueSlug = (baseValue, existingSlugs = []) => {
   if (!baseSlug) return "";
 
   const normalizedExisting = new Set(
-    existingSlugs.map((slug) => createSlug(slug)).filter(Boolean)
+    existingSlugs.map((slug) => createSlug(slug)).filter(Boolean),
   );
 
   if (!normalizedExisting.has(baseSlug)) {

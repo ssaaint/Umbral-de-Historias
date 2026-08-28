@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Inter:wght@300;400;500&display=swap');
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Inter:wght@300;400;500&display=swap");
 
 /* RESET */
 * {
@@ -7,14 +7,16 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   background: #080010;
 }
 
 /* FONDO */
 body {
-  font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
   background-color: #080010;
   background-image: none;
   background-repeat: no-repeat;
@@ -114,7 +116,7 @@ body {
   max-height: 440px;
   overflow: auto;
   padding: 14px;
-  border: 1px solid rgba(199,125,255,0.24);
+  border: 1px solid rgba(199, 125, 255, 0.24);
   border-radius: 8px;
   background:
     linear-gradient(180deg, rgba(32, 13, 48, 0.98), rgba(12, 2, 24, 0.98)),
@@ -172,7 +174,7 @@ body {
   padding: 12px;
   border: 1px solid rgba(229, 217, 255, 0.1);
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .notification-item-unread {
@@ -237,7 +239,7 @@ body {
   border: 1px solid rgba(229, 217, 255, 0.1);
   border-radius: 8px;
   color: rgba(229, 217, 255, 0.68);
-  background: rgba(255,255,255,0.035);
+  background: rgba(255, 255, 255, 0.035);
 }
 
 /* BUSCADOR */
@@ -246,7 +248,7 @@ body {
   border-radius: 10px;
   border: none;
   outline: none;
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
   color: white;
   font-size: 0.85rem;
   width: 180px;
@@ -254,7 +256,7 @@ body {
 }
 
 .search:focus {
-  background: rgba(255,255,255,0.1);
+  background: rgba(255, 255, 255, 0.1);
 }
 
 /* LINKS */
@@ -262,10 +264,10 @@ body {
   position: sticky;
   top: 0;
   z-index: 10;
-  box-shadow: 0 5px 20px rgba(123,44,191,0.15);
+  box-shadow: 0 5px 20px rgba(123, 44, 191, 0.15);
   backdrop-filter: blur(12px);
   background: rgba(10, 0, 20, 0.6);
-  border-bottom: 1px solid rgba(199,125,255,0.2);
+  border-bottom: 1px solid rgba(199, 125, 255, 0.2);
   padding: 15px 40px;
 }
 
@@ -275,8 +277,8 @@ body {
 
 /* BOTONES */
 .btn-logout {
-  background: rgba(123,44,191,0.2);
-  border: 1px solid rgba(199,125,255,0.4);
+  background: rgba(123, 44, 191, 0.2);
+  border: 1px solid rgba(199, 125, 255, 0.4);
   color: #e5d9ff;
   padding: 6px 12px;
   border-radius: 8px;
@@ -285,11 +287,11 @@ body {
 }
 
 .btn-logout:hover {
-  background: rgba(123,44,191,0.4);
+  background: rgba(123, 44, 191, 0.4);
 }
 
 .logo {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
 }
 
 /* HERO */
@@ -299,7 +301,7 @@ body {
 }
 
 .hero h1 {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 3rem;
 }
 
@@ -361,7 +363,7 @@ button:disabled {
 }
 
 .card {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
   padding: 20px;
   border-radius: 12px;
   backdrop-filter: blur(10px);
@@ -370,13 +372,17 @@ button:disabled {
 
 .card:hover {
   transform: scale(1.02);
-  box-shadow: 0 10px 30px rgba(123,44,191,0.3);
+  box-shadow: 0 10px 30px rgba(123, 44, 191, 0.3);
 }
 
 .premium {
-  background: linear-gradient(145deg, rgba(123,44,191,0.25), rgba(0,0,0,0.5));
-  border: 1px solid rgba(199,125,255,0.3);
-  box-shadow: 0 0 25px rgba(123,44,191,0.25);
+  background: linear-gradient(
+    145deg,
+    rgba(123, 44, 191, 0.25),
+    rgba(0, 0, 0, 0.5)
+  );
+  border: 1px solid rgba(199, 125, 255, 0.3);
+  box-shadow: 0 0 25px rgba(123, 44, 191, 0.25);
 }
 
 .page {
@@ -392,10 +398,10 @@ button:disabled {
   max-width: none;
   margin: 0 auto;
   padding: 48px 0 72px;
-  --reader-bg: rgba(255,255,255,0.045);
+  --reader-bg: rgba(255, 255, 255, 0.045);
   --reader-text: rgba(229, 217, 255, 0.9);
   --reader-muted: rgba(229, 217, 255, 0.66);
-  --reader-border: rgba(199,125,255,0.18);
+  --reader-border: rgba(199, 125, 255, 0.18);
   --reader-font-size: 18px;
   --reader-width: 760px;
 }
@@ -453,7 +459,7 @@ button:disabled {
 }
 
 .comment-card {
-  background: rgba(255,255,255,0.05);
+  background: rgba(255, 255, 255, 0.05);
   padding: 10px;
   border-radius: 8px;
   margin-bottom: 10px;
@@ -488,14 +494,14 @@ button:disabled {
   margin-bottom: 14px;
   padding: 12px 14px;
   border-radius: 8px;
-  border: 1px solid rgba(199,125,255,0.24);
-  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(199, 125, 255, 0.24);
+  background: rgba(255, 255, 255, 0.06);
   color: #e5d9ff;
   font: inherit;
 }
 
 .form-field:focus {
-  outline: 2px solid rgba(199,125,255,0.44);
+  outline: 2px solid rgba(199, 125, 255, 0.44);
   outline-offset: 2px;
 }
 
@@ -530,9 +536,9 @@ button:disabled {
 .advanced-settings-panel {
   margin: 10px 0 18px;
   padding: 18px;
-  border: 1px solid rgba(199,125,255,0.18);
+  border: 1px solid rgba(199, 125, 255, 0.18);
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .advanced-settings-panel h3 {
@@ -565,8 +571,12 @@ button:disabled {
   border: 1px solid rgba(110, 231, 216, 0.18);
   border-radius: 8px;
   background:
-    linear-gradient(145deg, rgba(110, 231, 216, 0.12), rgba(199,125,255,0.12)),
-    rgba(255,255,255,0.04);
+    linear-gradient(
+      145deg,
+      rgba(110, 231, 216, 0.12),
+      rgba(199, 125, 255, 0.12)
+    ),
+    rgba(255, 255, 255, 0.04);
 }
 
 .image-preview-small .image-preview-frame {
@@ -583,7 +593,7 @@ button:disabled {
 
 .image-preview-frame span {
   color: #6ee7d8;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 2.4rem;
 }
 
@@ -624,7 +634,7 @@ button:disabled {
   gap: 30px;
   align-items: start;
   padding-bottom: 38px;
-  border-bottom: 1px solid rgba(199,125,255,0.18);
+  border-bottom: 1px solid rgba(199, 125, 255, 0.18);
 }
 
 .obra-cover {
@@ -635,8 +645,12 @@ button:disabled {
   border: 1px solid rgba(110, 231, 216, 0.18);
   border-radius: 8px;
   background:
-    linear-gradient(145deg, rgba(110, 231, 216, 0.16), rgba(199, 125, 255, 0.12)),
-    rgba(255,255,255,0.045);
+    linear-gradient(
+      145deg,
+      rgba(110, 231, 216, 0.16),
+      rgba(199, 125, 255, 0.12)
+    ),
+    rgba(255, 255, 255, 0.045);
 }
 
 .obra-cover img {
@@ -647,13 +661,13 @@ button:disabled {
 
 .obra-cover span {
   color: #6ee7d8;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 5rem;
   line-height: 1;
 }
 
 .obra-hero-main h1 {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 3.4rem;
   line-height: 1;
   margin-bottom: 10px;
@@ -694,10 +708,14 @@ button:disabled {
   display: grid;
   gap: 12px;
   padding: 18px;
-  border: 1px solid rgba(199,125,255,0.16);
+  border: 1px solid rgba(199, 125, 255, 0.16);
   border-radius: 8px;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.07),
+      rgba(255, 255, 255, 0.035)
+    ),
     rgba(10, 0, 20, 0.78);
 }
 
@@ -724,11 +742,11 @@ button:disabled {
   gap: 32px;
   align-items: start;
   padding-bottom: 38px;
-  border-bottom: 1px solid rgba(199,125,255,0.18);
+  border-bottom: 1px solid rgba(199, 125, 255, 0.18);
 }
 
 .story-detail-hero h1 {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 3.4rem;
   line-height: 1;
   margin-bottom: 10px;
@@ -749,8 +767,12 @@ button:disabled {
   border: 1px solid rgba(110, 231, 216, 0.18);
   border-radius: 8px;
   background:
-    linear-gradient(145deg, rgba(110, 231, 216, 0.12), rgba(199,125,255,0.12)),
-    rgba(255,255,255,0.045);
+    linear-gradient(
+      145deg,
+      rgba(110, 231, 216, 0.12),
+      rgba(199, 125, 255, 0.12)
+    ),
+    rgba(255, 255, 255, 0.045);
 }
 
 .story-detail-cover img {
@@ -761,7 +783,7 @@ button:disabled {
 
 .story-detail-cover span {
   color: #6ee7d8;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 4rem;
 }
 
@@ -793,7 +815,7 @@ button:disabled {
   padding: 18px;
   border: 1px solid rgba(255, 209, 102, 0.28);
   border-radius: 8px;
-  background: rgba(255,255,255,0.055);
+  background: rgba(255, 255, 255, 0.055);
 }
 
 .story-stats-card span {
@@ -824,9 +846,9 @@ button:disabled {
   display: grid;
   gap: 8px;
   padding: 18px;
-  border: 1px solid rgba(199,125,255,0.18);
+  border: 1px solid rgba(199, 125, 255, 0.18);
   border-radius: 8px;
-  background: rgba(255,255,255,0.045);
+  background: rgba(255, 255, 255, 0.045);
   color: inherit;
   text-decoration: none;
   transition: 0.25s;
@@ -876,6 +898,38 @@ button:disabled {
 
 .comments-section .comment-input {
   margin-bottom: 12px;
+  min-height: 116px;
+  padding: 14px 16px;
+  border: 1px solid rgba(199, 125, 255, 0.32);
+  border-radius: 10px;
+  background: rgba(15, 5, 26, 0.78);
+  color: #f3ebff;
+  resize: vertical;
+  line-height: 1.55;
+}
+
+.comments-section .comment-input::placeholder {
+  color: rgba(229, 217, 255, 0.52);
+}
+
+.comments-section .comment-input:focus {
+  outline: none;
+  border-color: rgba(110, 231, 216, 0.75);
+  box-shadow: 0 0 0 3px rgba(110, 231, 216, 0.12);
+}
+
+.form-help,
+.form-error {
+  margin: 0;
+  font-size: 0.9rem;
+}
+
+.form-help {
+  color: #8fe7d9;
+}
+
+.form-error {
+  color: #ffb4c3;
 }
 
 .comment-form {
@@ -912,9 +966,9 @@ button:disabled {
 .reading-settings-panel {
   margin: 24px 0;
   padding: 18px;
-  border: 1px solid rgba(199,125,255,0.18);
+  border: 1px solid rgba(199, 125, 255, 0.18);
   border-radius: 8px;
-  background: rgba(255,255,255,0.045);
+  background: rgba(255, 255, 255, 0.045);
 }
 
 .reading-settings-heading {
@@ -952,7 +1006,7 @@ button:disabled {
   min-height: 42px;
   padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(199,125,255,0.28);
+  border: 1px solid rgba(199, 125, 255, 0.28);
   background: #160722;
   color: #e5d9ff;
   font: inherit;
@@ -984,7 +1038,7 @@ button:disabled {
   min-height: 42px;
   padding: 8px 10px;
   border: 1px solid rgba(229, 217, 255, 0.12);
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
   color: rgba(229, 217, 255, 0.78);
   font-size: 0.82rem;
   text-align: left;
@@ -1055,7 +1109,7 @@ button:disabled {
   padding: 16px;
   border: 1px solid rgba(110, 231, 216, 0.16);
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .chapter-images-input > p {
@@ -1084,7 +1138,7 @@ button:disabled {
   display: grid;
   gap: 8px;
   padding: 10px;
-  border: 1px solid rgba(199,125,255,0.16);
+  border: 1px solid rgba(199, 125, 255, 0.16);
   border-radius: 8px;
   background: rgba(10, 0, 20, 0.42);
 }
@@ -1094,7 +1148,7 @@ button:disabled {
   aspect-ratio: 16 / 10;
   object-fit: cover;
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .chapter-image-preview figcaption {
@@ -1115,7 +1169,7 @@ button:disabled {
   object-fit: contain;
   border: 1px solid var(--reader-border);
   border-radius: 8px;
-  background: rgba(255,255,255,0.035);
+  background: rgba(255, 255, 255, 0.035);
 }
 
 .chapter-image figcaption {
@@ -1126,22 +1180,27 @@ button:disabled {
 }
 
 .reader-font-inter .chapter-content {
-  font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
 }
 
 .reader-font-serif .chapter-content {
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: Georgia, "Times New Roman", serif;
 }
 
 .reader-font-system .chapter-content {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    sans-serif;
 }
 
 .reader-theme-dark {
   --reader-bg: #10071a;
   --reader-text: rgba(238, 230, 255, 0.92);
   --reader-muted: rgba(238, 230, 255, 0.62);
-  --reader-border: rgba(199,125,255,0.2);
+  --reader-border: rgba(199, 125, 255, 0.2);
 }
 
 .reader-theme-light {
@@ -1221,7 +1280,7 @@ button:disabled {
   gap: 28px;
   align-items: start;
   padding-bottom: 34px;
-  border-bottom: 1px solid rgba(199,125,255,0.18);
+  border-bottom: 1px solid rgba(199, 125, 255, 0.18);
 }
 
 .profile-avatar-large {
@@ -1232,8 +1291,8 @@ button:disabled {
   display: grid;
   place-items: center;
   border: 1px solid rgba(255, 209, 102, 0.28);
-  background: rgba(255,255,255,0.055);
-  box-shadow: 0 18px 48px rgba(0,0,0,0.22);
+  background: rgba(255, 255, 255, 0.055);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
 }
 
 .profile-avatar-large img {
@@ -1244,12 +1303,12 @@ button:disabled {
 
 .profile-avatar-large span {
   color: #ffd166;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 4rem;
 }
 
 .profile-main h1 {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 3.2rem;
   line-height: 1;
   margin-bottom: 8px;
@@ -1270,8 +1329,12 @@ button:disabled {
   border: 1px solid rgba(255, 209, 102, 0.34);
   border-radius: 999px;
   background:
-    linear-gradient(180deg, rgba(255, 209, 102, 0.18), rgba(199, 125, 255, 0.12)),
-    rgba(255,255,255,0.04);
+    linear-gradient(
+      180deg,
+      rgba(255, 209, 102, 0.18),
+      rgba(199, 125, 255, 0.12)
+    ),
+    rgba(255, 255, 255, 0.04);
   color: #ffd166;
   font-size: 0.78rem;
   font-weight: 800;
@@ -1283,6 +1346,19 @@ button:disabled {
 .profile-bio {
   color: rgba(229, 217, 255, 0.72);
   line-height: 1.6;
+}
+
+.profile-username,
+.profile-joined {
+  color: rgba(110, 231, 216, 0.84);
+  margin: 0.25rem 0;
+  font-weight: 700;
+}
+
+.profile-joined {
+  margin-top: 1rem;
+  color: rgba(229, 217, 255, 0.64);
+  font-weight: 500;
 }
 
 .profile-bio {
@@ -1311,7 +1387,7 @@ button:disabled {
   padding: 14px;
   border: 1px solid rgba(110, 231, 216, 0.18);
   border-radius: 8px;
-  background: rgba(255,255,255,0.045);
+  background: rgba(255, 255, 255, 0.045);
   color: rgba(229, 217, 255, 0.7);
 }
 
@@ -1322,6 +1398,20 @@ button:disabled {
 
 .profile-section .compact-story-list {
   grid-template-columns: 1fr;
+}
+
+.profile-section {
+  margin-top: clamp(2.5rem, 6vw, 4.5rem);
+  padding-top: 0.25rem;
+}
+
+.profile-section .section-heading {
+  margin-bottom: 1.3rem;
+}
+
+.profile-section .section-heading p {
+  margin: 0.45rem 0 0;
+  color: rgba(229, 217, 255, 0.64);
 }
 
 .translated-chapter-list {
@@ -1341,9 +1431,9 @@ button:disabled {
   justify-content: space-between;
   gap: 12px;
   padding: 14px;
-  border: 1px solid rgba(199,125,255,0.16);
+  border: 1px solid rgba(199, 125, 255, 0.16);
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
   color: inherit;
   text-decoration: none;
 }
@@ -1367,10 +1457,14 @@ button:disabled {
   display: grid;
   gap: 14px;
   padding: 18px;
-  border: 1px solid rgba(199,125,255,0.16);
+  border: 1px solid rgba(199, 125, 255, 0.16);
   border-radius: 8px;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.07),
+      rgba(255, 255, 255, 0.035)
+    ),
     rgba(10, 0, 20, 0.78);
 }
 
@@ -1425,7 +1519,7 @@ button:disabled {
   padding: 12px;
   border: 1px solid rgba(110, 231, 216, 0.16);
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .followed-story-progress dt {
@@ -1454,7 +1548,7 @@ button:disabled {
 }
 
 .logo {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 1.8rem;
   text-decoration: none;
   color: #e5d9ff;
@@ -1478,10 +1572,10 @@ button:disabled {
   border: 1px solid rgba(255, 209, 102, 0.38);
   background: rgba(255, 209, 102, 0.1);
   color: #ffd166;
-  font-family: 'Inter', sans-serif;
+  font-family: "Inter", sans-serif;
   font-size: 0.72rem;
   font-weight: 800;
-  filter: drop-shadow(0 0 6px rgba(199,125,255,0.6));
+  filter: drop-shadow(0 0 6px rgba(199, 125, 255, 0.6));
 }
 
 /* 🌙 LUNA DE FONDO */
@@ -1492,7 +1586,11 @@ body::after {
   right: 10%;
   width: 300px;
   height: 300px;
-  background: radial-gradient(circle, rgba(199,125,255,0.25), transparent 70%);
+  background: radial-gradient(
+    circle,
+    rgba(199, 125, 255, 0.25),
+    transparent 70%
+  );
   border-radius: 50%;
   filter: blur(40px);
   z-index: 0;
@@ -1506,8 +1604,16 @@ body::before {
   z-index: 0;
   pointer-events: none;
   background:
-    radial-gradient(circle at 18% 14%, rgba(255, 209, 102, 0.12), transparent 26%),
-    radial-gradient(circle at 85% 24%, rgba(110, 231, 216, 0.08), transparent 30%),
+    radial-gradient(
+      circle at 18% 14%,
+      rgba(255, 209, 102, 0.12),
+      transparent 26%
+    ),
+    radial-gradient(
+      circle at 85% 24%,
+      rgba(110, 231, 216, 0.08),
+      transparent 30%
+    ),
     linear-gradient(180deg, #0b0014 0%, #12051f 52%, #080010 100%);
   background-repeat: no-repeat;
   background-size: 100% 100%;
@@ -1546,12 +1652,16 @@ body::before {
   border: 1px solid rgba(229, 217, 255, 0.12);
   border-radius: 8px;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.075), rgba(255,255,255,0.035)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.075),
+      rgba(255, 255, 255, 0.035)
+    ),
     rgba(15, 4, 28, 0.52);
   color: rgba(229, 217, 255, 0.86);
   line-height: 1;
   text-decoration: none;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.07);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
   transition:
     color 0.2s ease,
     border-color 0.2s ease,
@@ -1562,17 +1672,21 @@ body::before {
 .navbar .nav-link:hover,
 .navbar .nav-link-active {
   color: #ffffff;
-  border-color: rgba(199,125,255,0.5);
+  border-color: rgba(199, 125, 255, 0.5);
   background:
-    linear-gradient(180deg, rgba(199,125,255,0.28), rgba(123,44,191,0.16)),
+    linear-gradient(
+      180deg,
+      rgba(199, 125, 255, 0.28),
+      rgba(123, 44, 191, 0.16)
+    ),
     rgba(18, 5, 31, 0.72);
   transform: translateY(-1px);
 }
 
 .navbar .nav-link-active {
   box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.1),
-    0 10px 28px rgba(123,44,191,0.22);
+    inset 0 1px 0 rgba(255, 255, 255, 0.1),
+    0 10px 28px rgba(123, 44, 191, 0.22);
 }
 
 .nav-button {
@@ -1581,7 +1695,11 @@ body::before {
 
 .nav-button:hover {
   background:
-    linear-gradient(180deg, rgba(255, 209, 102, 0.28), rgba(255, 209, 102, 0.12)),
+    linear-gradient(
+      180deg,
+      rgba(255, 209, 102, 0.28),
+      rgba(255, 209, 102, 0.12)
+    ),
     rgba(18, 5, 31, 0.72);
   border-color: rgba(255, 209, 102, 0.46);
 }
@@ -1589,7 +1707,7 @@ body::before {
 .search {
   width: 260px;
   border-radius: 8px;
-  border: 1px solid rgba(199,125,255,0.16);
+  border: 1px solid rgba(199, 125, 255, 0.16);
 }
 
 .page-home {
@@ -1611,7 +1729,7 @@ body::before {
   gap: 44px;
   align-items: center;
   padding: 38px 0 56px;
-  border-bottom: 1px solid rgba(199,125,255,0.18);
+  border-bottom: 1px solid rgba(199, 125, 255, 0.18);
 }
 
 .home-hero-minimal {
@@ -1637,7 +1755,7 @@ body::before {
 }
 
 .home-hero h1 {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 4.6rem;
   line-height: 0.95;
   margin-bottom: 18px;
@@ -1652,11 +1770,11 @@ body::before {
 
 .explore-header {
   padding: 40px 0 22px;
-  border-bottom: 1px solid rgba(199,125,255,0.18);
+  border-bottom: 1px solid rgba(199, 125, 255, 0.18);
 }
 
 .explore-header h1 {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 3.6rem;
   line-height: 1;
   margin-bottom: 12px;
@@ -1708,8 +1826,8 @@ body::before {
 
 .btn-link-ghost {
   color: #e5d9ff;
-  border: 1px solid rgba(199,125,255,0.35);
-  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(199, 125, 255, 0.35);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .hero-stats {
@@ -1727,7 +1845,7 @@ body::before {
   padding: 12px 14px;
   border: 1px solid rgba(110, 231, 216, 0.18);
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
   color: rgba(229, 217, 255, 0.7);
 }
 
@@ -1745,7 +1863,7 @@ body::before {
 
 .home-hero-visual img {
   width: min(320px, 72%);
-  filter: drop-shadow(0 26px 46px rgba(123,44,191,0.42));
+  filter: drop-shadow(0 26px 46px rgba(123, 44, 191, 0.42));
 }
 
 .hero-spotlight {
@@ -1757,7 +1875,7 @@ body::before {
   border: 1px solid rgba(255, 209, 102, 0.28);
   border-radius: 8px;
   background: rgba(14, 2, 24, 0.86);
-  box-shadow: 0 18px 48px rgba(0,0,0,0.38);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.38);
 }
 
 .hero-spotlight span {
@@ -1805,9 +1923,13 @@ body::before {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  border: 1px solid rgba(199,125,255,0.16);
+  border: 1px solid rgba(199, 125, 255, 0.16);
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.035)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.07),
+      rgba(255, 255, 255, 0.035)
+    ),
     rgba(10, 0, 20, 0.78);
 }
 
@@ -1820,8 +1942,12 @@ body::before {
   border-radius: 8px;
   border: 1px solid rgba(110, 231, 216, 0.14);
   background:
-    linear-gradient(145deg, rgba(110, 231, 216, 0.12), rgba(199,125,255,0.12)),
-    rgba(255,255,255,0.04);
+    linear-gradient(
+      145deg,
+      rgba(110, 231, 216, 0.12),
+      rgba(199, 125, 255, 0.12)
+    ),
+    rgba(255, 255, 255, 0.04);
 }
 
 .story-card-cover img {
@@ -1832,7 +1958,7 @@ body::before {
 
 .story-card-cover span {
   color: #6ee7d8;
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 3.2rem;
 }
 
@@ -1873,7 +1999,7 @@ body::before {
   flex: 0 0 28px;
   border-radius: 50%;
   border: 1px solid rgba(229, 217, 255, 0.14);
-  background: rgba(255,255,255,0.06);
+  background: rgba(255, 255, 255, 0.06);
 }
 
 .story-author-avatar img {
@@ -1988,9 +2114,9 @@ body::before {
   gap: 12px;
   align-items: end;
   padding: 16px;
-  border: 1px solid rgba(199,125,255,0.2);
+  border: 1px solid rgba(199, 125, 255, 0.2);
   border-radius: 8px;
-  background: rgba(255,255,255,0.045);
+  background: rgba(255, 255, 255, 0.045);
   margin-bottom: 14px;
 }
 
@@ -2005,19 +2131,20 @@ body::before {
   font-size: 0.86rem;
 }
 
-.filter-field select {
+.filter-field select,
+.filter-field input {
   width: 100%;
   min-height: 42px;
   padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid rgba(199,125,255,0.28);
+  border: 1px solid rgba(199, 125, 255, 0.28);
   background: #160722;
   color: #e5d9ff;
 }
 
 .btn-filter-reset {
   min-height: 42px;
-  background: rgba(255,255,255,0.06);
+  background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 209, 102, 0.28);
   color: #ffd166;
 }
@@ -2049,10 +2176,31 @@ body::before {
 
 .empty-state {
   padding: 22px;
-  border: 1px solid rgba(199,125,255,0.18);
+  border: 1px solid rgba(199, 125, 255, 0.18);
   border-radius: 8px;
-  background: rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.04);
   color: rgba(229, 217, 255, 0.72);
+}
+
+.setup-notice {
+  max-width: 720px;
+  margin: 4rem auto;
+  text-align: left;
+}
+
+.setup-notice h1 {
+  margin: 0.4rem 0 1rem;
+}
+
+.setup-notice code {
+  color: var(--accent, #9d4edd);
+  font-weight: 700;
+}
+
+.setup-missing {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  opacity: 0.8;
 }
 
 .page-empty-state {
@@ -2068,7 +2216,7 @@ body::before {
 }
 
 .empty-state-large h1 {
-  font-family: 'Cormorant Garamond', serif;
+  font-family: "Cormorant Garamond", serif;
   font-size: 3.2rem;
   line-height: 1;
 }
@@ -2093,7 +2241,7 @@ body::before {
   padding: 16px;
   border-radius: 8px;
   border: 1px solid rgba(110, 231, 216, 0.18);
-  background: rgba(255,255,255,0.045);
+  background: rgba(255, 255, 255, 0.045);
   color: #e5d9ff;
   text-align: left;
 }
@@ -2130,7 +2278,11 @@ body::before {
   border: 1px solid rgba(110, 231, 216, 0.18);
   border-radius: 8px;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.032)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.065),
+      rgba(255, 255, 255, 0.032)
+    ),
     rgba(10, 0, 20, 0.72);
 }
 
@@ -2153,13 +2305,51 @@ body::before {
   border: 1px solid rgba(255, 209, 102, 0.22);
   border-radius: 8px;
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.032)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.065),
+      rgba(255, 255, 255, 0.032)
+    ),
     rgba(10, 0, 20, 0.72);
 }
 
 .support-panel p {
   color: rgba(229, 217, 255, 0.78);
   line-height: 1.55;
+}
+
+.site-footer {
+  width: min(1180px, calc(100% - 32px));
+  margin: clamp(3rem, 8vw, 6rem) auto 2rem;
+}
+
+.discord-request-card {
+  margin: 1.25rem 0;
+  padding: 1.1rem 1.2rem;
+  border: 1px solid rgba(114, 137, 218, 0.45);
+  border-radius: 12px;
+  background: rgba(88, 101, 242, 0.1);
+}
+
+.discord-request-card p {
+  margin: 0.45rem 0 0.75rem;
+  color: rgba(229, 217, 255, 0.78);
+}
+
+.discord-request-card a {
+  color: #aeb8ff;
+  font-weight: 800;
+}
+
+.discord-nav-link {
+  gap: 0.45rem;
+  color: #d9ddff;
+}
+
+.discord-nav-link svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
 }
 
 .genre-tile-link {
@@ -2171,8 +2361,8 @@ body::before {
   background:
     linear-gradient(180deg, rgba(24, 8, 38, 0.86), rgba(10, 0, 20, 0.68)),
     rgba(10, 0, 20, 0.76);
-  border-bottom: 1px solid rgba(199,125,255,0.24);
-  box-shadow: 0 16px 44px rgba(0,0,0,0.28);
+  border-bottom: 1px solid rgba(199, 125, 255, 0.24);
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.28);
 }
 
 .logo {
@@ -2195,7 +2385,11 @@ body::before {
 .nav-link {
   border-color: rgba(229, 217, 255, 0.14);
   background:
-    linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035)),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.09),
+      rgba(255, 255, 255, 0.035)
+    ),
     rgba(18, 5, 31, 0.62);
   backdrop-filter: blur(10px);
 }

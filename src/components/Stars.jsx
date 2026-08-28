@@ -27,7 +27,7 @@ export default function Stars() {
           y: Math.random() * canvas.height,
           size: Math.random() * 1.2,
           speed: Math.random() * 2 + 0.05,
-          opacity: Math.random()
+          opacity: Math.random(),
         });
       }
     };
@@ -60,10 +60,5 @@ export default function Stars() {
     return () => window.removeEventListener("resize", resize);
   }, []);
 
-  return (
-    <canvas
-      ref={canvasRef}
-      className="stars-canvas"
-    />
-  );
+  return <canvas ref={canvasRef} className="stars-canvas" />;
 }

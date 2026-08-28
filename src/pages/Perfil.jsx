@@ -1,454 +1,262 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   collection,
-  collectionGroup,
   doc,
   getDoc,
   getDocs,
   query,
-  setDoc,
-  where
+  serverTimestamp,
+  where,
+  writeBatch,
 } from "firebase/firestore";
-import { auth, db } from "../firebase";
+import { db } from "../firebase";
+import { useAuth } from "../hooks/useAuth";
 import StoryCard from "../components/StoryCard";
-import { getDisplayChapters } from "../utils/chapterUtils";
-import { cleanDisplayName } from "../utils/displayUtils";
-import { buildLibraryItems } from "../utils/libraryUtils";
-import { isAdmin, userCanManageStory } from "../utils/permissionUtils";
-import {
-  getCommentsCount,
-  getLikesCount,
-  getStoryDescription,
-  isTranslation,
-  sortByDate
-} from "../utils/storyUtils";
-
-const getViewsCount = (historia) =>
-  Number(
-    historia.vistas ??
-      historia.views ??
-      historia.visualizaciones ??
-      historia.lecturas ??
-      0
-  ) || 0;
-
-const getFollowedIds = (perfil = {}) => {
-  const candidates = [
-    perfil.historiasSeguidas,
-    perfil.seguidas,
-    perfil.siguiendo,
-    perfil.historiasFavoritas,
-    perfil.favoritas
-  ];
-
-  return [
-    ...new Set(
-      candidates
-        .flatMap((value) => (Array.isArray(value) ? value : []))
-        .map((value) => String(value).trim())
-        .filter(Boolean)
-    )
-  ];
-};
-
-const hasNewChapter = (progreso, ultimoCapituloDisponible) => {
-  if (!progreso?.ultimoCapituloId || !ultimoCapituloDisponible?.id) {
-    return false;
-  }
-
-  const ultimoOrden = Number(ultimoCapituloDisponible.orden || 0);
-  const vistoOrden = Number(progreso.ultimoCapituloOrden || 0);
-
-  if (ultimoOrden && vistoOrden) {
-    return ultimoOrden > vistoOrden;
-  }
-
-  return progreso.ultimoCapituloId !== ultimoCapituloDisponible.id;
-};
-
-const getChapterLabel = (capitulo) => {
-  if (!capitulo?.id) {
-    return "Sin capitulos";
-  }
-
-  return `Capitulo ${capitulo.orden || "?"}: ${capitulo.titulo || "Sin titulo"}`;
-};
-
-const getProgressDateValue = (progreso) => {
-  const fecha = progreso?.fechaLectura || progreso?.vistoEn || progreso?.updatedAt;
-
-  if (!fecha) return 0;
-  if (typeof fecha.toMillis === "function") return fecha.toMillis();
-  if (typeof fecha.toDate === "function") return fecha.toDate().getTime();
-  if (typeof fecha.seconds === "number") return fecha.seconds * 1000;
-
-  const parsed = Date.parse(fecha);
-  return Number.isNaN(parsed) ? 0 : parsed;
-};
+import FollowAuthorButton from "../components/FollowAuthorButton";
+import { formatDate } from "../utils/contentModel";
+import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
+import { createAccountProfile } from "../services/accountService";
+import { getUsernameError, normalizeUsername } from "../utils/username";
+import { chapterRoute, getWork } from "../services/workService";
 
 export default function Perfil() {
-  const user = auth.currentUser;
-
-  const [nombre, setNombre] = useState("");
-  const [bio, setBio] = useState("");
-  const [foto, setFoto] = useState("");
-  const [editando, setEditando] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [historiasCreadas, setHistoriasCreadas] = useState([]);
-  const [traduccionesSubidas, setTraduccionesSubidas] = useState([]);
-  const [historiasSeguidas, setHistoriasSeguidas] = useState([]);
-  const [leyendo, setLeyendo] = useState([]);
-  const [capitulosTraducidos, setCapitulosTraducidos] = useState([]);
-  const [perfilUsuario, setPerfilUsuario] = useState({});
-
+  const { uid } = useParams();
+  const { user, profile, loading } = useAuth();
+  const own = !uid || uid === user?.uid;
+  const targetUid = own ? user?.uid : uid;
+  const [publicProfile, setPublicProfile] = useState(null);
+  const [works, setWorks] = useState([]);
+  const [chapterCount, setChapterCount] = useState(0);
+  const [followed, setFollowed] = useState([]);
+  const [recent, setRecent] = useState([]);
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    nombre: "",
+    username: "",
+    bio: "",
+    fotoUrl: "",
+    mostrarSeguidasPublicas: false,
+  });
   useEffect(() => {
-    const cargarPerfil = async () => {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-
+    if (!targetUid) return;
+    (async () => {
       try {
-        const perfilRef = doc(db, "usuarios", user.uid);
-        const perfilSnap = await getDoc(perfilRef);
-        const perfilData = perfilSnap.exists() ? perfilSnap.data() : {};
-        setPerfilUsuario(perfilData);
-
-        setNombre(perfilData.nombre || "");
-        setBio(perfilData.bio || "");
-        setFoto(perfilData.fotoUrl || perfilData.foto || "");
-
-        const [historiasResult, obrasResult] = await Promise.allSettled([
+        const [profileSnap, workSnap, chapterSnap] = await Promise.all([
+          getDoc(doc(db, "perfilesPublicos", targetUid)),
           getDocs(
-            query(collection(db, "historias"), where("autorId", "==", user.uid))
+            query(collection(db, "obras"), where("autorId", "==", targetUid)),
           ),
-          getDocs(collection(db, "obras"))
+          getDocs(
+            query(
+              collection(db, "capitulos"),
+              where("autorId", "==", targetUid),
+            ),
+          ),
         ]);
-        const historiasDocs =
-          historiasResult.status === "fulfilled" ? historiasResult.value.docs : [];
-        const obrasDocs =
-          obrasResult.status === "fulfilled" ? obrasResult.value.docs : [];
-
-        if (historiasResult.status === "rejected") {
-          console.error("No se pudieron cargar historias del perfil:", historiasResult.reason);
-        }
-
-        if (obrasResult.status === "rejected") {
-          console.error("No se pudieron cargar obras del perfil:", obrasResult.reason);
-        }
-
-        const publicaciones = buildLibraryItems(obrasDocs, historiasDocs).filter(
-          (item) => userCanManageStory(user, item, perfilData)
+        const visibleProfile = own
+          ? { ...(profile || {}), ...(profileSnap.data() || {}) }
+          : profileSnap.exists()
+            ? profileSnap.data()
+            : null;
+        setPublicProfile(visibleProfile);
+        setForm({
+          nombre: visibleProfile?.nombre || "",
+          username: visibleProfile?.username || "",
+          bio: visibleProfile?.bio || "",
+          fotoUrl: visibleProfile?.fotoUrl || "",
+          mostrarSeguidasPublicas: Boolean(
+            visibleProfile?.mostrarSeguidasPublicas,
+          ),
+        });
+        setWorks(
+          workSnap.docs.map((item) => ({ id: item.id, ...item.data() })),
         );
-
-        setHistoriasCreadas(
-          sortByDate(publicaciones.filter((historia) => !isTranslation(historia)))
-        );
-        setTraduccionesSubidas(
-          sortByDate(publicaciones.filter((historia) => isTranslation(historia)))
-        );
-
-        let followedIds = getFollowedIds(perfilData);
-
-        try {
-          const seguidasSnap = await getDocs(
-            collection(db, "usuarios", user.uid, "seguidas")
+        setChapterCount(chapterSnap.size);
+        const canSeeFollows = own || visibleProfile?.mostrarSeguidasPublicas;
+        if (canSeeFollows) {
+          const followSnap = await getDocs(
+            query(
+              collection(db, "seguimientos"),
+              where("usuarioId", "==", targetUid),
+            ),
           );
-          followedIds = [
-            ...new Set([
-              ...followedIds,
-              ...seguidasSnap.docs.map((seguidaDoc) => seguidaDoc.id)
-            ])
-          ];
-        } catch {
-          // Los arrays legacy siguen cubriendo perfiles anteriores.
-        }
-        const progresoLectura = perfilData.progresoLectura || {};
-        const cargarObraCompat = async (obraId) => {
-          const obraSnap = await getDoc(doc(db, "obras", obraId));
-
-          if (obraSnap.exists()) {
-            return {
-              id: obraSnap.id,
-              source: "obras",
-              route: `/obra/${obraSnap.id}`,
-              detailRoute: `/obra/${obraSnap.id}`,
-              ...obraSnap.data()
-            };
-          }
-
-          const historiaSnap = await getDoc(doc(db, "historias", obraId));
-
-          if (!historiaSnap.exists()) {
-            return null;
-          }
-
-          return {
-            id: historiaSnap.id,
-            source: "historias",
-            route: `/obra/${historiaSnap.id}`,
-            detailRoute: `/obra/${historiaSnap.id}`,
-            ...historiaSnap.data()
-          };
-        };
-        const progresoMap = new Map(
-          Object.entries(progresoLectura).map(([obraId, progreso]) => [
-            obraId,
-            {
-              obraId,
-              ...progreso
-            }
-          ])
-        );
-
-        try {
-          const progresoSnap = await getDocs(
-            collection(db, "usuarios", user.uid, "progreso")
+          const worksList = await Promise.all(
+            followSnap.docs.map(async (item) => {
+              const data = item.data();
+              const work = await getWork(data.obraId);
+              return work ? { work, data } : null;
+            }),
           );
-
-          progresoSnap.docs.forEach((progresoDoc) => {
-            progresoMap.set(progresoDoc.id, {
-              obraId: progresoDoc.id,
-              ...progresoDoc.data()
-            });
-          });
-        } catch {
-          // El mapa legacy progresoLectura mantiene compatibilidad.
-        }
-
-        const leyendoDocs = await Promise.all(
-          [...progresoMap.values()]
-            .sort((a, b) => getProgressDateValue(b) - getProgressDateValue(a))
-            .slice(0, 8)
-            .map(async (progreso) => {
-              const obraId = progreso.obraId || progreso.historiaId;
-              const obra = await cargarObraCompat(obraId);
-
-              if (!obra) return null;
-
-              return {
-                ...obra,
-                progresoLectura: progreso,
-                continueRoute:
-                  progreso.ruta ||
-                  (progreso.traduccionId
-                    ? `/obra/${obraId}/traducciones/${progreso.traduccionId}/capitulo/${progreso.capituloId || progreso.ultimoCapituloId}`
-                    : `/obra/${obraId}/capitulo/${progreso.capituloId || progreso.ultimoCapituloId}`),
-                ultimoCapituloDisponible: progreso.ultimoDisponibleNumero
-                  ? {
-                      id: progreso.ultimoDisponibleId || "",
-                      orden: progreso.ultimoDisponibleNumero,
-                      titulo: progreso.ultimoDisponibleTitulo || ""
-                    }
-                  : null
-              };
-            })
-        );
-
-        setLeyendo(leyendoDocs.filter(Boolean));
-
-        const followedDocs = await Promise.all(
-          followedIds.map(async (obraId) => {
-            const historia = await cargarObraCompat(obraId);
-
-            if (!historia) return null;
-
-            let capitulosSnap;
-
-            try {
-              capitulosSnap = await getDocs(
-                collection(db, "obras", obraId, "capitulos")
-              );
-            } catch {
-              capitulosSnap = { docs: [] };
-            }
-
-            if (!capitulosSnap.docs?.length) {
-              try {
-                capitulosSnap = await getDocs(
-                  collection(db, "historias", obraId, "capitulos")
-                );
-              } catch {
-                capitulosSnap = { docs: [] };
-              }
-            }
-
-            const capitulosData = capitulosSnap.docs.map((capituloDoc) => ({
-              id: capituloDoc.id,
-              ...capituloDoc.data()
-            }));
-            const capitulosVisibles = getDisplayChapters(historia, capitulosData);
-            const ultimoCapituloDisponible =
-              capitulosVisibles[capitulosVisibles.length - 1] || null;
-            const progreso = progresoMap.get(obraId) || progresoLectura[obraId] || null;
-
-            return {
-              ...historia,
-              progresoLectura: progreso,
-              primerCapituloDisponible: capitulosVisibles[0] || null,
-              ultimoCapituloDisponible,
-              hayNuevoCapitulo: hasNewChapter(progreso, ultimoCapituloDisponible)
-            };
-          })
-        );
-
-        setHistoriasSeguidas(followedDocs.filter(Boolean));
-
-        try {
-          const capitulosSnap = await getDocs(
-            query(collectionGroup(db, "capitulos"), where("traductorId", "==", user.uid))
+          setFollowed(worksList.filter(Boolean));
+        } else setFollowed([]);
+        if (own) {
+          const readingSnap = await getDocs(
+            query(
+              collection(db, "progresoLectura"),
+              where("usuarioId", "==", targetUid),
+            ),
           );
-
-          setCapitulosTraducidos(
-            capitulosSnap.docs.map((capituloDoc) => ({
-              id: capituloDoc.id,
-              historiaId: capituloDoc.ref.parent.parent?.id,
-              ...capituloDoc.data()
-            }))
+          const readingList = await Promise.all(
+            readingSnap.docs.map(async (item) => {
+              const data = item.data();
+              const work = await getWork(data.obraId);
+              return work ? { work, data } : null;
+            }),
           );
-        } catch {
-          setCapitulosTraducidos([]);
-        }
+          setRecent(
+            readingList
+              .filter(Boolean)
+              .sort(
+                (a, b) =>
+                  (b.data.fechaLectura?.toMillis?.() || 0) -
+                  (a.data.fechaLectura?.toMillis?.() || 0),
+              ),
+          );
+        } else setRecent([]);
       } catch (error) {
-        console.error(error);
-      } finally {
-        setLoading(false);
+        console.error("No se pudo cargar el perfil:", error);
       }
-    };
-
-    cargarPerfil();
-  }, [user]);
-
-  const publicaciones = useMemo(
-    () => [...historiasCreadas, ...traduccionesSubidas],
-    [historiasCreadas, traduccionesSubidas]
-  );
-
-  const estadisticas = useMemo(
-    () => ({
-      historias: historiasCreadas.length,
-      traducciones: traduccionesSubidas.length,
-      seguidas: historiasSeguidas.length,
-      capitulosLeidos: Number(perfilUsuario.capitulosLeidos || 0) || 0,
-      vistas: publicaciones.reduce(
-        (total, historia) => total + getViewsCount(historia),
-        0
-      ),
-      likes: publicaciones.reduce(
-        (total, historia) => total + getLikesCount(historia),
-        0
-      ),
-      comentarios: publicaciones.reduce(
-        (total, historia) => total + getCommentsCount(historia),
-        0
-      )
-    }),
-    [
-      historiasCreadas,
-      historiasSeguidas.length,
-      perfilUsuario.capitulosLeidos,
-      publicaciones,
-      traduccionesSubidas.length
-    ]
-  );
-
-  const guardarPerfil = async () => {
+    })();
+  }, [own, profile, targetUid]);
+  const save = async () => {
     if (!user) return;
-
+    const name = form.nombre.trim();
+    const username = normalizeUsername(form.username);
+    if (
+      !name ||
+      name.length > 60 ||
+      form.bio.length > 600 ||
+      form.fotoUrl.length > 2048
+    )
+      return alert("Revisá los límites del perfil.");
+    const needsUsername = !profile?.usernameNormalizado;
+    if (needsUsername) {
+      const usernameError = getUsernameError(username);
+      if (usernameError) return alert(usernameError);
+    }
     try {
-      const perfilRef = doc(db, "usuarios", user.uid);
-
-      await setDoc(
-        perfilRef,
-        {
-          nombre,
-          bio,
-          foto,
-          fotoUrl: foto,
-          updatedAt: new Date()
-        },
-        { merge: true }
-      );
-
-      setEditando(false);
-      alert("Perfil guardado");
+      if (needsUsername) {
+        await createAccountProfile({ user, username, nombre: name });
+      }
+      const batch = writeBatch(db);
+      const update = {
+        nombre: name,
+        bio: form.bio.trim(),
+        fotoUrl: form.fotoUrl.trim(),
+        mostrarSeguidasPublicas: form.mostrarSeguidasPublicas,
+        updatedAt: serverTimestamp(),
+      };
+      batch.update(doc(db, "usuarios", user.uid), update);
+      batch.update(doc(db, "perfilesPublicos", user.uid), update);
+      await batch.commit();
+      setEditing(false);
     } catch (error) {
-      console.error(error);
-      alert("Error al guardar el perfil");
+      console.error("No se pudo guardar el perfil:", error);
+      alert(getFriendlyFirebaseError(error, "perfil"));
     }
   };
-
-  if (!user) {
-    return <p className="page">No estas logueado</p>;
-  }
-
-  if (loading) {
-    return <p className="page">Cargando perfil...</p>;
-  }
-
-  const displayName = nombre || cleanDisplayName(user.email || "Usuario");
-  const admin = isAdmin(perfilUsuario);
-
+  const stats = useMemo(
+    () => ({
+      works: works.length,
+      chapters: chapterCount,
+      views: works.reduce((total, work) => total + Number(work.vistas || 0), 0),
+      likes: works.reduce((total, work) => total + Number(work.likes || 0), 0),
+    }),
+    [chapterCount, works],
+  );
+  if (loading && own) return <p className="page">Cargando perfil…</p>;
+  if (!targetUid || (!own && !publicProfile))
+    return (
+      <main className="page">
+        <h2>Perfil no encontrado.</h2>
+      </main>
+    );
+  const shown = own
+    ? { ...publicProfile, rol: profile?.rol || publicProfile?.rol }
+    : publicProfile;
+  const avatarUrl = editing ? form.fotoUrl : shown?.fotoUrl;
   return (
     <main className="page page-profile">
       <section className="profile-hero">
         <div className="profile-avatar-large">
-          {foto ? (
-            <img src={foto} alt={nombre || user.email} />
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="Avatar" />
           ) : (
-            <span>{(nombre || user.email || "N").slice(0, 1).toUpperCase()}</span>
+            <span>{(shown?.nombre || "U").slice(0, 1).toUpperCase()}</span>
           )}
         </div>
-
         <div className="profile-main">
-          {editando ? (
+          {own && editing ? (
             <>
               <p className="section-kicker">Editar perfil</p>
               <input
+                className="form-field"
+                maxLength="60"
+                value={form.nombre}
                 placeholder="Nombre"
-                value={nombre}
-                onChange={(event) => setNombre(event.target.value)}
-                className="form-field"
+                onChange={(event) =>
+                  setForm({ ...form, nombre: event.target.value })
+                }
               />
-
-              <textarea
-                placeholder="Biografia"
-                value={bio}
-                onChange={(event) => setBio(event.target.value)}
-                rows={4}
-                className="form-field full-width"
-              />
-
-              <input
-                placeholder="URL de imagen de perfil"
-                value={foto}
-                onChange={(event) => setFoto(event.target.value)}
-                className="form-field"
-              />
-
-              <div className="image-preview image-preview-small">
-                <div className="image-preview-frame">
-                  {foto ? (
-                    <img src={foto} alt="Vista previa del perfil" />
-                  ) : (
-                    <span>{(nombre || user.email || "N").slice(0, 1).toUpperCase()}</span>
+              {(!profile?.usernameNormalizado || form.username) && (
+                <label className="filter-field">
+                  <span>Nombre de usuario</span>
+                  <input
+                    className="form-field"
+                    maxLength="20"
+                    value={form.username}
+                    disabled={Boolean(profile?.usernameNormalizado)}
+                    placeholder="usuario_unico"
+                    onChange={(event) =>
+                      setForm({ ...form, username: event.target.value })
+                    }
+                  />
+                  {!profile?.usernameNormalizado && (
+                    <small>Este identificador se elige una sola vez.</small>
                   )}
-                </div>
-                <p>Vista previa de imagen de perfil</p>
-              </div>
-
-              <p className="permission-note">
-                Por ahora la imagen se guarda como URL. El campo queda listo
-                para migrar a Firebase Storage mas adelante.
-              </p>
-
+                </label>
+              )}
+              <textarea
+                className="form-field full-width"
+                rows={4}
+                maxLength="600"
+                value={form.bio}
+                placeholder="Biografía"
+                onChange={(event) =>
+                  setForm({ ...form, bio: event.target.value })
+                }
+              />
+              <input
+                className="form-field"
+                maxLength="2048"
+                value={form.fotoUrl}
+                placeholder="URL de foto"
+                onChange={(event) =>
+                  setForm({ ...form, fotoUrl: event.target.value })
+                }
+              />
+              <label className="form-check">
+                <input
+                  type="checkbox"
+                  checked={form.mostrarSeguidasPublicas}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      mostrarSeguidasPublicas: event.target.checked,
+                    })
+                  }
+                />{" "}
+                Mostrar las obras que sigo en mi perfil público
+              </label>
               <div className="profile-actions">
-                <button onClick={guardarPerfil}>Guardar</button>
+                <button type="button" onClick={save}>
+                  Guardar perfil
+                </button>
                 <button
                   type="button"
                   className="btn-filter-reset"
-                  onClick={() => setEditando(false)}
+                  onClick={() => setEditing(false)}
                 >
                   Cancelar
                 </button>
@@ -456,214 +264,190 @@ export default function Perfil() {
             </>
           ) : (
             <>
-              <p className="section-kicker">Perfil</p>
-              <div className="profile-title-row">
-                <h1>{displayName}</h1>
-                {admin && <span className="admin-badge">Administrador</span>}
-              </div>
-              {nombre && <p className="profile-email">{user.email}</p>}
-              <p className="profile-bio">
-                {bio || "Todavia no hay biografia."}
+              <p className="section-kicker">
+                {own ? "Mi perfil" : "Perfil público"}
               </p>
-
-              <button onClick={() => setEditando(true)}>Editar perfil</button>
+              <div className="profile-title-row">
+                <h1>{shown?.nombre || "Usuario"}</h1>
+                {shown?.rol === "admin" && (
+                  <span className="admin-badge">Administrador</span>
+                )}
+                {shown?.rol === "moderador" && (
+                  <span className="story-pill">Moderador</span>
+                )}
+                {shown?.rol === "traductor" && (
+                  <span className="story-pill">Traductor</span>
+                )}
+              </div>
+              {shown?.username && (
+                <p className="profile-username">@{shown.username}</p>
+              )}
+              {own && <p className="profile-email">{user.email}</p>}
+              <p className="profile-bio">
+                {shown?.bio || "Todavía no hay biografía."}
+              </p>
+              {!own && (
+                <FollowAuthorButton
+                  authorId={targetUid}
+                  onChange={(amount) =>
+                    setPublicProfile((current) =>
+                      current
+                        ? {
+                            ...current,
+                            seguidoresCount: Math.max(
+                              0,
+                              Number(current.seguidoresCount || 0) + amount,
+                            ),
+                          }
+                        : current,
+                    )
+                  }
+                />
+              )}
+              {own && (
+                <button type="button" onClick={() => setEditing(true)}>
+                  Editar perfil
+                </button>
+              )}
             </>
           )}
         </div>
       </section>
-
       <section className="profile-stats-grid">
         <span>
-          <strong>{estadisticas.historias}</strong>
-          historias
+          <strong>{stats.works}</strong>obras creadas
         </span>
         <span>
-          <strong>{estadisticas.traducciones}</strong>
-          traducciones
+          <strong>{stats.chapters}</strong>capítulos publicados
         </span>
         <span>
-          <strong>{estadisticas.seguidas}</strong>
-          seguidas
+          <strong>{stats.views}</strong>vistas acumuladas
         </span>
         <span>
-          <strong>{estadisticas.capitulosLeidos}</strong>
-          capitulos leidos
+          <strong>{stats.likes}</strong>likes recibidos
         </span>
         <span>
-          <strong>{estadisticas.vistas}</strong>
-          vistas
+          <strong>{Number(shown?.seguidoresCount || 0)}</strong>seguidores
         </span>
         <span>
-          <strong>{estadisticas.likes}</strong>
-          likes recibidos
-        </span>
-        <span>
-          <strong>{estadisticas.comentarios}</strong>
-          comentarios
+          <strong>{Number(shown?.siguiendoCount || 0)}</strong>siguiendo
         </span>
       </section>
-
-      <ProfileSection title="Historias creadas" empty="Todavia no creaste historias.">
-        {historiasCreadas.map((historia) => (
-          <StoryCard
-            key={historia.id}
-            historia={historia}
-            resumenCaracteres={90}
-            compact
-          />
+      {shown?.fechaRegistro && (
+        <p className="profile-joined">
+          En Umbral desde {formatDate(shown.fechaRegistro)}
+        </p>
+      )}
+      <ProfileSection
+        title="Obras creadas"
+        description="Publicaciones de esta persona"
+        empty="Todavía no hay obras publicadas."
+      >
+        {works.map((work) => (
+          <StoryCard key={work.id} historia={work} compact />
         ))}
       </ProfileSection>
-
-      <ProfileSection title="Traducciones subidas" empty="Todavia no subiste traducciones.">
-        {traduccionesSubidas.map((historia) => (
-          <StoryCard
-            key={historia.id}
-            historia={historia}
-            resumenCaracteres={90}
-            compact
-          />
-        ))}
-
-        {capitulosTraducidos.length > 0 && (
-          <div className="translated-chapter-list">
-            {capitulosTraducidos.map((capitulo) => (
-              <Link
-                key={`${capitulo.historiaId}-${capitulo.id}`}
-                to={`/historia/${capitulo.historiaId}/capitulo/${capitulo.id}`}
-                className="translated-chapter-item"
-              >
-                <strong>{capitulo.titulo || "Capitulo traducido"}</strong>
-                <span>{capitulo.estado || "pendiente"}</span>
-              </Link>
+      {own && (
+        <>
+          <ProfileSection
+            title="Continuar leyendo"
+            description="Obras con capítulos pendientes"
+            empty="No tenés lecturas pendientes."
+          >
+            {recent
+              .filter(
+                (item) =>
+                  Number(item.data.numeroCapitulo || 0) <
+                  Number(item.data.ultimoDisponibleNumero || 0),
+              )
+              .map((item) => (
+                <ReadingItem key={item.work.id} item={item} />
+              ))}
+          </ProfileSection>
+          <ProfileSection
+            title="Lecturas recientes"
+            description="Tu actividad más reciente"
+            empty="Todavía no registraste lecturas."
+          >
+            {recent.map((item) => (
+              <ReadingItem
+                key={`${item.work.id}-${item.data.capituloId}`}
+                item={item}
+              />
             ))}
-          </div>
-        )}
-      </ProfileSection>
-
-      <ProfileSection title="Leyendo" empty="Todavia no hay progreso de lectura.">
-        {leyendo.map((historia) => (
-          <FollowedStoryItem
-            key={`leyendo-${historia.id}`}
-            historia={historia}
-          />
-        ))}
-      </ProfileSection>
-
-      <ProfileSection title="Historias seguidas" empty="Todavia no seguis historias.">
-        {historiasSeguidas.map((historia) => (
-          <FollowedStoryItem
-            key={historia.id}
-            historia={historia}
-          />
-        ))}
-      </ProfileSection>
+          </ProfileSection>
+        </>
+      )}{" "}
+      {(own || shown?.mostrarSeguidasPublicas) && (
+        <ProfileSection
+          title={own ? "Mis historias" : "Obras que sigue"}
+          description={own ? "Tu biblioteca personal" : "Seguimientos públicos"}
+          empty="No hay obras seguidas para mostrar."
+        >
+          {followed.map((item) => (
+            <article className="followed-story-item" key={item.work.id}>
+              <div className="followed-story-main">
+                <Link
+                  className="followed-story-title"
+                  to={`/obra/${item.work.id}`}
+                >
+                  {item.work.titulo}
+                </Link>
+                <p className="followed-story-description">
+                  Seguida desde {formatDate(item.data.fechaSeguimiento)}
+                </p>
+              </div>
+              <Link
+                className="btn-link btn-link-primary"
+                to={`/obra/${item.work.id}`}
+              >
+                Ver obra
+              </Link>
+            </article>
+          ))}
+        </ProfileSection>
+      )}
     </main>
   );
 }
-
-function FollowedStoryItem({ historia }) {
-  const progreso = historia.progresoLectura;
-  const progressChapterId = progreso?.capituloId || progreso?.ultimoCapituloId;
-  const progressChapterTitle =
-    progreso?.tituloCapitulo || progreso?.ultimoCapituloTitulo;
-  const progressChapterNumber =
-    progreso?.numeroCapitulo ||
-    progreso?.ultimoCapituloNumero ||
-    progreso?.ultimoCapituloOrden;
-  const capituloContinuar =
-    progressChapterId && progressChapterId !== ""
-      ? {
-          id: progressChapterId,
-          titulo: progressChapterTitle,
-          orden: progressChapterNumber
-        }
-      : historia.primerCapituloDisponible;
-  const detalleRuta = historia.detailRoute || historia.route || `/obra/${historia.id}`;
-  const continuarRuta =
-    historia.continueRoute ||
-    progreso?.ruta ||
-    (capituloContinuar?.id
-      ? `/obra/${historia.id}/capitulo/${capituloContinuar.id}`
-      : detalleRuta);
-  const descripcion = getStoryDescription(historia);
-
+function ReadingItem({ item }) {
   return (
-    <article
-      className={`followed-story-item ${
-        historia.hayNuevoCapitulo ? "followed-story-item-new" : ""
-      }`}
-    >
+    <article className="followed-story-item">
       <div className="followed-story-main">
         <div>
-          <div className="story-card-topline">
-            <span className="story-pill">
-              {progreso?.tipo === "traduccion" || isTranslation(historia)
-                ? "Traduccion"
-                : "Original"}
-            </span>
-            {historia.hayNuevoCapitulo && (
-              <span className="new-chapter-badge">Nuevo capitulo</span>
-            )}
-          </div>
-
-          <Link to={detalleRuta} className="followed-story-title">
-            {historia.titulo || "Sin titulo"}
+          <Link className="followed-story-title" to={`/obra/${item.work.id}`}>
+            {item.work.titulo}
           </Link>
-
           <p className="followed-story-description">
-            {descripcion || "Sin descripcion disponible."}
+            Capítulo {item.data.numeroCapitulo}: {item.data.tituloCapitulo}
           </p>
         </div>
-
-        <div className="followed-story-actions">
-          <Link to={continuarRuta} className="btn-link btn-link-primary">
-            {progressChapterId ? "Continuar" : "Empezar"}
-          </Link>
-          <Link to={detalleRuta} className="btn-link btn-link-ghost">
-            Detalle
-          </Link>
-        </div>
+        <Link
+          className="btn-link btn-link-primary"
+          to={chapterRoute(
+            item.work.id,
+            item.data.capituloId,
+            item.data.traduccionId,
+          )}
+        >
+          Continuar
+        </Link>
       </div>
-
-      <dl className="followed-story-progress">
-        <div>
-          <dt>Ultimo visto</dt>
-          <dd>
-            {progressChapterId
-              ? getChapterLabel({
-                  id: progressChapterId,
-                  titulo: progressChapterTitle,
-                  orden: progressChapterNumber
-                })
-              : "Sin lectura registrada"}
-          </dd>
-        </div>
-
-        <div>
-          <dt>Ultimo disponible</dt>
-          <dd>{getChapterLabel(historia.ultimoCapituloDisponible)}</dd>
-        </div>
-      </dl>
     </article>
   );
 }
-
-function ProfileSection({ title, empty, children }) {
-  const visibleChildren = Array.isArray(children)
-    ? children.flat(Infinity).filter(Boolean)
-    : children
-      ? [children]
-      : [];
-
+function ProfileSection({ title, description, empty, children }) {
+  const items = Array.isArray(children)
+    ? children.filter(Boolean)
+    : [children].filter(Boolean);
   return (
-    <section className="home-section profile-section">
+    <section className="profile-section">
       <div className="section-heading">
-        <p className="section-kicker">Actividad</p>
         <h2>{title}</h2>
+        {description && <p>{description}</p>}
       </div>
-
-      {visibleChildren.length > 0 ? (
-        <div className="compact-story-list">{visibleChildren}</div>
+      {items.length ? (
+        <div className="compact-story-list">{items}</div>
       ) : (
         <p className="empty-state">{empty}</p>
       )}

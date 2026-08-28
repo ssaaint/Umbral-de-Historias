@@ -9,7 +9,8 @@ import {
   query,
   serverTimestamp,
   updateDoc,
-  writeBatch
+  where,
+  writeBatch,
 } from "firebase/firestore";
 import { db } from "../firebase";
 import { NOTIFICATION_TYPES } from "../utils/notificationUtils";
@@ -20,7 +21,7 @@ const notificationLabels = {
   [NOTIFICATION_TYPES.NEW_LIKE]: "Like",
   [NOTIFICATION_TYPES.NEW_TRANSLATED_CHAPTER]: "Traduccion",
   [NOTIFICATION_TYPES.TRANSLATION_PENDING]: "Pendiente",
-  [NOTIFICATION_TYPES.TRANSLATION_APPROVED]: "Aprobada"
+  [NOTIFICATION_TYPES.TRANSLATION_APPROVED]: "Aprobada",
 };
 
 const formatNotificationDate = (value) => {
@@ -34,7 +35,7 @@ const formatNotificationDate = (value) => {
     day: "2-digit",
     month: "short",
     hour: "2-digit",
-    minute: "2-digit"
+    minute: "2-digit",
   }).format(date);
 };
 
@@ -42,7 +43,7 @@ export default function NotificationBell({ user }) {
   const [open, setOpen] = useState(false);
   const [notificationsState, setNotificationsState] = useState({
     items: [],
-    userId: ""
+    userId: "",
   });
   const wrapperRef = useRef(null);
 
@@ -52,9 +53,10 @@ export default function NotificationBell({ user }) {
     }
 
     const notificationsQuery = query(
-      collection(db, "usuarios", user.uid, "notificaciones"),
+      collection(db, "notificaciones"),
+      where("usuarioId", "==", user.uid),
       orderBy("createdAt", "desc"),
-      limit(20)
+      limit(20),
     );
 
     const unsubscribe = onSnapshot(
@@ -64,13 +66,13 @@ export default function NotificationBell({ user }) {
           userId: user.uid,
           items: snapshot.docs.map((notificationDoc) => ({
             id: notificationDoc.id,
-            ...notificationDoc.data()
-          }))
+            ...notificationDoc.data(),
+          })),
         });
       },
       (error) => {
         console.error(error);
-      }
+      },
     );
 
     return () => unsubscribe();
@@ -92,26 +94,22 @@ export default function NotificationBell({ user }) {
   const notifications = useMemo(
     () =>
       notificationsState.userId === user?.uid ? notificationsState.items : [],
-    [notificationsState.items, notificationsState.userId, user?.uid]
+    [notificationsState.items, notificationsState.userId, user?.uid],
   );
   const loading = Boolean(user?.uid && notificationsState.userId !== user.uid);
   const unreadCount = useMemo(
     () => notifications.filter((notification) => !notification.leida).length,
-    [notifications]
+    [notifications],
   );
 
   const markAsRead = async (notification) => {
     if (!user?.uid || !notification?.id || notification.leida) return;
 
     try {
-      await updateDoc(
-        doc(db, "usuarios", user.uid, "notificaciones", notification.id),
-        {
-          leida: true,
-          leidaEn: serverTimestamp(),
-          updatedAt: serverTimestamp()
-        }
-      );
+      await updateDoc(doc(db, "notificaciones", notification.id), {
+        leida: true,
+        leidaEn: serverTimestamp(),
+      });
     } catch (error) {
       console.error(error);
     }
@@ -121,7 +119,7 @@ export default function NotificationBell({ user }) {
     if (!user?.uid) return;
 
     const unreadNotifications = notifications.filter(
-      (notification) => !notification.leida
+      (notification) => !notification.leida,
     );
 
     if (unreadNotifications.length === 0) return;
@@ -130,14 +128,10 @@ export default function NotificationBell({ user }) {
       const batch = writeBatch(db);
 
       unreadNotifications.forEach((notification) => {
-        batch.update(
-          doc(db, "usuarios", user.uid, "notificaciones", notification.id),
-          {
-            leida: true,
-            leidaEn: serverTimestamp(),
-            updatedAt: serverTimestamp()
-          }
-        );
+        batch.update(doc(db, "notificaciones", notification.id), {
+          leida: true,
+          leidaEn: serverTimestamp(),
+        });
       });
 
       await batch.commit();
@@ -200,7 +194,9 @@ export default function NotificationBell({ user }) {
                     <span>
                       {notificationLabels[notification.tipo] || "Aviso"}
                     </span>
-                    <time>{formatNotificationDate(notification.createdAt)}</time>
+                    <time>
+                      {formatNotificationDate(notification.createdAt)}
+                    </time>
                   </div>
 
                   <strong>{notification.titulo || "Notificacion"}</strong>
